@@ -1,6 +1,6 @@
-# Hitachi Cricket — Live Scoring & Player Stats
+# Cricket — Live Scoring & Player Stats
 
-A self-hosted, CricHeroes-style cricket platform for Hitachi.
+A self-hosted, CricHeroes-style cricket platform.
 Manage teams and players, run **ball-by-ball live scoring**, and publish
 match results, scorecards, player profiles and league leaderboards on a
 public-facing website.
@@ -68,8 +68,7 @@ Open **http://localhost:3000**.
 Configured in `.env`:
 
 ```
-ADMIN_USERNAME=admin
-ADMIN_PASSWORD=hitachi@123
+
 ```
 
 **Change these** in production by editing `.env` (or your deploy environment).
@@ -131,10 +130,7 @@ prisma/
 ## Configuration (`.env`)
 
 ```env
-DATABASE_URL="file:./dev.db"            # SQLite (default). For Postgres see below.
-ADMIN_USERNAME="admin"
-ADMIN_PASSWORD="hitachi@123"
-SESSION_SECRET="change-me-to-a-long-random-string"
+
 ```
 
 ### Switching to PostgreSQL (recommended for shared deployments)

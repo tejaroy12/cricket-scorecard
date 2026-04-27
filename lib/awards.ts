@@ -1,0 +1,179 @@
+import { prisma } from "./prisma";
+import { computeEconomy, computeStrikeRate, formatOvers } from "./scoring";
+
+export type Award = {
+  playerId: string;
+  playerName: string;
+  teamName: string;
+  headline: string;   // e.g. "47 (32) · SR 146.88"
+  caption: string;    // e.g. "Top-scored across both innings"
+};
+
+export type MatchAwards = {
+  bestBatter: Award | null;
+  bestBowler: Award | null;
+  manOfTheMatch: (Award & { score: number }) | null;
+};
+
+/**
+ * Compute match awards from the recorded innings/balls.
+ *  - Best batter: most runs (tiebreak: more boundaries, then higher SR).
+ *  - Best bowler: most wickets (tiebreak: lower economy among legal balls).
+ *  - Man of the match: combined impact score across both innings.
+ *      score = runs scored
+ *            + 20 * wickets
+ *            - max(0, runsConceded - 6 * oversBowled) * 0.3
+ *    (penalises only economy worse than 6 RPO)
+ */
+export async function computeMatchAwards(matchId: string): Promise<MatchAwards> {
+  const [battingEntries, bowlingEntries] = await Promise.all([
+    prisma.battingEntry.findMany({
+      where: { innings: { matchId } },
+      include: { player: { include: { team: true } } },
+    }),
+    prisma.bowlingEntry.findMany({
+      where: { innings: { matchId } },
+      include: { player: { include: { team: true } } },
+    }),
+  ]);
+
+  // -- Best batter ---------------------------------------------------------
+  let bestBatter: Award | null = null;
+  let bestBatterRuns = -1;
+  let bestBatterBoundaries = -1;
+  let bestBatterSR = -1;
+  for (const b of battingEntries) {
+    if (b.runs === 0 && b.balls === 0) continue;
+    const sr = computeStrikeRate(b.runs, b.balls);
+    const boundaries = b.fours + b.sixes;
+    const better =
+      b.runs > bestBatterRuns ||
+      (b.runs === bestBatterRuns && boundaries > bestBatterBoundaries) ||
+      (b.runs === bestBatterRuns && boundaries === bestBatterBoundaries && sr > bestBatterSR);
+    if (better) {
+      bestBatterRuns = b.runs;
+      bestBatterBoundaries = boundaries;
+      bestBatterSR = sr;
+      bestBatter = {
+        playerId: b.playerId,
+        playerName: b.player.name,
+        teamName: b.player.team.name,
+        headline: `${b.runs} (${b.balls})${b.isOut ? "" : "*"}`,
+        caption: `${b.fours} fours · ${b.sixes} sixes · SR ${sr || "-"}`,
+      };
+    }
+  }
+
+  // -- Best bowler ---------------------------------------------------------
+  let bestBowler: Award | null = null;
+  let bestBowlerWkts = -1;
+  let bestBowlerEcon = Infinity;
+  for (const b of bowlingEntries) {
+    if (b.balls === 0 && b.wickets === 0) continue;
+    const econ = computeEconomy(b.runsConceded, b.balls);
+    const better =
+      b.wickets > bestBowlerWkts ||
+      (b.wickets === bestBowlerWkts && econ < bestBowlerEcon);
+    if (better) {
+      bestBowlerWkts = b.wickets;
+      bestBowlerEcon = econ;
+      bestBowler = {
+        playerId: b.playerId,
+        playerName: b.player.name,
+        teamName: b.player.team.name,
+        headline: `${b.wickets}/${b.runsConceded}`,
+        caption: `${formatOvers(b.balls)} ov · Econ ${econ || "-"}`,
+      };
+    }
+  }
+
+  // -- Man of the match (combined impact) ---------------------------------
+  type Agg = {
+    playerId: string;
+    playerName: string;
+    teamName: string;
+    runs: number;
+    balls: number;
+    fours: number;
+    sixes: number;
+    wickets: number;
+    legalBalls: number;
+    runsConceded: number;
+  };
+  const agg = new Map<string, Agg>();
+  for (const b of battingEntries) {
+    const cur = agg.get(b.playerId) ?? {
+      playerId: b.playerId,
+      playerName: b.player.name,
+      teamName: b.player.team.name,
+      runs: 0,
+      balls: 0,
+      fours: 0,
+      sixes: 0,
+      wickets: 0,
+      legalBalls: 0,
+      runsConceded: 0,
+    };
+    cur.runs += b.runs;
+    cur.balls += b.balls;
+    cur.fours += b.fours;
+    cur.sixes += b.sixes;
+    agg.set(b.playerId, cur);
+  }
+  for (const b of bowlingEntries) {
+    const cur = agg.get(b.playerId) ?? {
+      playerId: b.playerId,
+      playerName: b.player.name,
+      teamName: b.player.team.name,
+      runs: 0,
+      balls: 0,
+      fours: 0,
+      sixes: 0,
+      wickets: 0,
+      legalBalls: 0,
+      runsConceded: 0,
+    };
+    cur.wickets += b.wickets;
+    cur.legalBalls += b.balls;
+    cur.runsConceded += b.runsConceded;
+    agg.set(b.playerId, cur);
+  }
+
+  let momPlayer: Agg | null = null;
+  let momScore = -Infinity;
+  for (const p of agg.values()) {
+    const overs = p.legalBalls / 6;
+    const economyPenalty =
+      overs > 0 ? Math.max(0, p.runsConceded - 6 * overs) * 0.3 : 0;
+    const score = p.runs + 20 * p.wickets - economyPenalty;
+    if (score > momScore) {
+      momScore = score;
+      momPlayer = p;
+    }
+  }
+
+  let manOfTheMatch: (Award & { score: number }) | null = null;
+  if (momPlayer && momScore > 0) {
+    const parts: string[] = [];
+    if (momPlayer.runs > 0 || momPlayer.balls > 0) {
+      parts.push(`${momPlayer.runs} (${momPlayer.balls})`);
+    }
+    if (momPlayer.wickets > 0 || momPlayer.legalBalls > 0) {
+      parts.push(
+        `${momPlayer.wickets}/${momPlayer.runsConceded} in ${formatOvers(
+          momPlayer.legalBalls,
+        )}`,
+      );
+    }
+    manOfTheMatch = {
+      playerId: momPlayer.playerId,
+      playerName: momPlayer.playerName,
+      teamName: momPlayer.teamName,
+      headline: parts.join("  ·  ") || "—",
+      caption: `Impact score ${Math.round(momScore * 10) / 10}`,
+      score: momScore,
+    };
+  }
+
+  return { bestBatter, bestBowler, manOfTheMatch };
+}

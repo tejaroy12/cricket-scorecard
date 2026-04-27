@@ -1,0 +1,174 @@
+// Hitachi Cricket - Prisma schema
+// SQLite for simplicity. Switch DATABASE_URL + provider for Postgres in prod.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Team {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  shortName String   @default("")
+  logoUrl   String?
+  createdAt DateTime @default(now())
+
+  players       Player[]
+  homeMatches   Match[]  @relation("Team1Matches")
+  awayMatches   Match[]  @relation("Team2Matches")
+  battingInnings Innings[] @relation("BattingTeam")
+  bowlingInnings Innings[] @relation("BowlingTeam")
+  tossWonMatches Match[]  @relation("TossWinner")
+}
+
+model Player {
+  id            String   @id @default(cuid())
+  name          String
+  employeeId    String?  @unique
+  role          String   @default("BATTER") // BATTER, BOWLER, ALL_ROUNDER, WICKET_KEEPER
+  battingStyle  String   @default("RHB")    // RHB, LHB
+  bowlingStyle  String?                     // RIGHT_FAST, LEFT_SPIN, etc.
+  photoUrl      String?
+  jerseyNumber  Int?
+  createdAt     DateTime @default(now())
+
+  teamId        String
+  team          Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  battingEntries  BattingEntry[]
+  bowlingEntries  BowlingEntry[]
+  ballsAsBatter   Ball[]   @relation("Striker")
+  ballsAsNonStriker Ball[] @relation("NonStriker")
+  ballsAsBowler   Ball[]   @relation("Bowler")
+  dismissals      Ball[]   @relation("DismissedPlayer")
+
+  @@index([teamId])
+}
+
+model Match {
+  id            String   @id @default(cuid())
+  team1Id       String
+  team2Id       String
+  team1         Team     @relation("Team1Matches", fields: [team1Id], references: [id])
+  team2         Team     @relation("Team2Matches", fields: [team2Id], references: [id])
+
+  venue         String   @default("Hitachi Sports Ground")
+  matchDate     DateTime @default(now())
+  oversPerSide  Int      @default(20)
+  status        String   @default("SCHEDULED") // SCHEDULED, LIVE, COMPLETED, ABANDONED
+
+  tossWinnerId  String?
+  tossWinner    Team?    @relation("TossWinner", fields: [tossWinnerId], references: [id])
+  tossDecision  String?  // BAT, BOWL
+
+  resultText    String?  // e.g. "Hitachi Tigers won by 24 runs"
+  winnerTeamId  String?
+  manOfTheMatchId String?
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  innings       Innings[]
+
+  @@index([status])
+  @@index([matchDate])
+}
+
+model Innings {
+  id             String   @id @default(cuid())
+  matchId        String
+  match          Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  inningsNumber  Int      // 1 or 2
+  battingTeamId  String
+  battingTeam    Team     @relation("BattingTeam", fields: [battingTeamId], references: [id])
+  bowlingTeamId  String
+  bowlingTeam    Team     @relation("BowlingTeam", fields: [bowlingTeamId], references: [id])
+
+  totalRuns      Int      @default(0)
+  totalWickets   Int      @default(0)
+  totalBalls     Int      @default(0) // legal balls bowled
+  extras         Int      @default(0)
+  isClosed       Boolean  @default(false)
+
+  balls          Ball[]
+  battingEntries BattingEntry[]
+  bowlingEntries BowlingEntry[]
+
+  @@unique([matchId, inningsNumber])
+}
+
+model Ball {
+  id           String   @id @default(cuid())
+  inningsId    String
+  innings      Innings  @relation(fields: [inningsId], references: [id], onDelete: Cascade)
+
+  overNumber   Int      // 0-indexed
+  ballInOver   Int      // 1..6 for legal balls; for extras you may exceed
+  sequence     Int      // strict order within an innings
+
+  strikerId    String
+  striker      Player   @relation("Striker", fields: [strikerId], references: [id])
+  nonStrikerId String
+  nonStriker   Player   @relation("NonStriker", fields: [nonStrikerId], references: [id])
+  bowlerId     String
+  bowler       Player   @relation("Bowler", fields: [bowlerId], references: [id])
+
+  runs         Int      @default(0) // runs scored off the bat
+  extras       Int      @default(0) // extras runs
+  extraType    String?  // WIDE, NO_BALL, BYE, LEG_BYE
+  isLegal      Boolean  @default(true) // false for wide / no-ball
+  isWicket     Boolean  @default(false)
+  wicketType   String?  // BOWLED, CAUGHT, LBW, RUN_OUT, STUMPED, HIT_WICKET
+  dismissedPlayerId String?
+  dismissedPlayer  Player? @relation("DismissedPlayer", fields: [dismissedPlayerId], references: [id])
+
+  commentary   String?
+  createdAt    DateTime @default(now())
+
+  @@index([inningsId, sequence])
+}
+
+// Per-innings batting card
+model BattingEntry {
+  id          String  @id @default(cuid())
+  inningsId   String
+  innings     Innings @relation(fields: [inningsId], references: [id], onDelete: Cascade)
+  playerId    String
+  player      Player  @relation(fields: [playerId], references: [id])
+
+  battingOrder Int    @default(0)
+  runs        Int     @default(0)
+  balls       Int     @default(0)
+  fours       Int     @default(0)
+  sixes       Int     @default(0)
+  isOut       Boolean @default(false)
+  outDesc     String? // e.g. "c Sharma b Khan"
+  isStriker   Boolean @default(false)
+  isOnCrease  Boolean @default(false)
+
+  @@unique([inningsId, playerId])
+  @@index([inningsId])
+}
+
+// Per-innings bowling card
+model BowlingEntry {
+  id          String  @id @default(cuid())
+  inningsId   String
+  innings     Innings @relation(fields: [inningsId], references: [id], onDelete: Cascade)
+  playerId    String
+  player      Player  @relation(fields: [playerId], references: [id])
+
+  balls       Int     @default(0) // legal balls
+  runsConceded Int    @default(0)
+  wickets     Int     @default(0)
+  maidens     Int     @default(0)
+  wides       Int     @default(0)
+  noBalls     Int     @default(0)
+
+  @@unique([inningsId, playerId])
+  @@index([inningsId])
+}

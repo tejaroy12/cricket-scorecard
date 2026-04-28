@@ -17,6 +17,7 @@ export async function POST(
       },
       team1: true,
       team2: true,
+      matchPlayers: { select: { id: true, side: true } },
     },
   });
   if (!match) return NextResponse.json({ error: "Match not found" }, { status: 404 });
@@ -24,13 +25,23 @@ export async function POST(
   const innings1 = match.innings.find((i) => i.inningsNumber === 1);
   const innings2 = match.innings.find((i) => i.inningsNumber === 2);
 
+  function rosterSize(teamId: string, fallback: number): number {
+    const side =
+      match!.team1Id === teamId ? 1 : match!.team2Id === teamId ? 2 : 0;
+    const fromMatch = match!.matchPlayers.filter((mp) => mp.side === side).length;
+    return fromMatch > 0 ? fromMatch : fallback;
+  }
+
   let winnerTeamId: string | null = null;
   let resultText = "Match abandoned";
 
   if (innings1 && innings2) {
     if (innings2.totalRuns > innings1.totalRuns) {
       winnerTeamId = innings2.battingTeamId;
-      const chaseTeamSize = innings2.battingTeam.players.length;
+      const chaseTeamSize = rosterSize(
+        innings2.battingTeamId,
+        innings2.battingTeam.players.length,
+      );
       const maxWickets = Math.max(1, chaseTeamSize - 1);
       const wicketsLeft = Math.max(0, maxWickets - innings2.totalWickets);
       resultText = `${innings2.battingTeam.name} won by ${wicketsLeft} wicket${wicketsLeft === 1 ? "" : "s"}`;

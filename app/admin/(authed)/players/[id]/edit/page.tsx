@@ -62,7 +62,8 @@ async function updatePlayer(formData: FormData) {
   }
 
   const name = String(formData.get("name") || "").trim();
-  const teamId = String(formData.get("teamId") || "");
+  const teamIdRaw = String(formData.get("teamId") || "").trim();
+  const teamId = teamIdRaw || null;
   const role = String(formData.get("role") || "BATTER");
   const battingStyle = String(formData.get("battingStyle") || "RHB");
   const bowlingStyleRaw = String(formData.get("bowlingStyle") || "").trim();
@@ -73,15 +74,13 @@ async function updatePlayer(formData: FormData) {
     setEditFlash(id, "Player name is required.", "err");
     redirect(`/admin/players/${id}/edit`);
   }
-  if (!teamId) {
-    setEditFlash(id, "Please pick a team.", "err");
-    redirect(`/admin/players/${id}/edit`);
-  }
 
-  const team = await prisma.team.findUnique({ where: { id: teamId } });
-  if (!team) {
-    setEditFlash(id, "Selected team no longer exists.", "err");
-    redirect(`/admin/players/${id}/edit`);
+  if (teamId) {
+    const team = await prisma.team.findUnique({ where: { id: teamId } });
+    if (!team) {
+      setEditFlash(id, "Selected team no longer exists.", "err");
+      redirect(`/admin/players/${id}/edit`);
+    }
   }
 
   const jerseyParsed = jerseyRaw ? Number(jerseyRaw) : null;
@@ -120,8 +119,8 @@ async function updatePlayer(formData: FormData) {
   revalidatePath("/admin/players");
   revalidatePath("/players");
   revalidatePath(`/players/${id}`);
-  revalidatePath(`/teams/${teamId}`);
-  if (player!.teamId !== teamId) {
+  if (teamId) revalidatePath(`/teams/${teamId}`);
+  if (player!.teamId && player!.teamId !== teamId) {
     revalidatePath(`/teams/${player!.teamId}`);
   }
   redirect("/admin/players");
@@ -153,10 +152,16 @@ export default async function EditPlayerPage({
           </div>
           <h1 className="text-2xl font-bold text-slate-900">{player.name}</h1>
           <p className="text-sm text-slate-500">
-            Currently in{" "}
-            <span className="font-medium text-slate-700">
-              {player.team.name}
-            </span>
+            {player.team ? (
+              <>
+                Currently in{" "}
+                <span className="font-medium text-slate-700">
+                  {player.team.name}
+                </span>
+              </>
+            ) : (
+              <span className="italic">Free agent (no default team)</span>
+            )}
           </p>
         </div>
         <div className="flex gap-2">
@@ -186,13 +191,13 @@ export default async function EditPlayerPage({
           </div>
 
           <div>
-            <label className="label">Team</label>
+            <label className="label">Default team (optional)</label>
             <select
               className="input"
               name="teamId"
-              required
-              defaultValue={player.teamId}
+              defaultValue={player.teamId ?? ""}
             >
+              <option value="">— Free agent —</option>
               {teams.map((t) => (
                 <option key={t.id} value={t.id}>
                   {t.name}

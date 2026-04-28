@@ -47,7 +47,9 @@ export default async function LeaderboardPage() {
                           {b.player.name}
                         </Link>
                       </td>
-                      <td className="px-5 py-3 text-slate-600 whitespace-nowrap">{b.player.team.name}</td>
+                      <td className="px-5 py-3 text-slate-600 whitespace-nowrap">
+                        {b.player.team?.name ?? <span className="italic text-slate-400">Free agent</span>}
+                      </td>
                       <td className="px-5 py-3 text-right font-bold tabular-nums">{b.runs}</td>
                       <td className="px-5 py-3 text-right tabular-nums">{b.balls}</td>
                       <td className="px-5 py-3 text-right tabular-nums">{b.fours}</td>
@@ -92,7 +94,9 @@ export default async function LeaderboardPage() {
                           {b.player.name}
                         </Link>
                       </td>
-                      <td className="px-5 py-3 text-slate-600 whitespace-nowrap">{b.player.team.name}</td>
+                      <td className="px-5 py-3 text-slate-600 whitespace-nowrap">
+                        {b.player.team?.name ?? <span className="italic text-slate-400">Free agent</span>}
+                      </td>
                       <td className="px-5 py-3 text-right font-bold tabular-nums">{b.wickets}</td>
                       <td className="px-5 py-3 text-right tabular-nums">{b.runsConceded}</td>
                       <td className="px-5 py-3 text-right tabular-nums">{b.balls}</td>

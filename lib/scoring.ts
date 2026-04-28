@@ -254,12 +254,31 @@ export async function applyBall(input: BallInput) {
     const after = await tx.innings.findUnique({
       where: { id: input.inningsId },
       include: {
-        match: { select: { id: true, oversPerSide: true } },
+        match: {
+          select: {
+            id: true,
+            oversPerSide: true,
+            team1Id: true,
+            team2Id: true,
+            matchPlayers: { select: { id: true, side: true } },
+          },
+        },
         battingTeam: { select: { players: { select: { id: true } } } },
       },
     });
     if (after && !after.isClosed) {
-      const teamSize = after.battingTeam.players.length;
+      // Prefer per-match roster size; fall back to team.players for legacy matches.
+      const battingSide =
+        after.battingTeamId === after.match.team1Id
+          ? 1
+          : after.battingTeamId === after.match.team2Id
+          ? 2
+          : 0;
+      const matchRosterSize = after.match.matchPlayers.filter(
+        (mp) => mp.side === battingSide,
+      ).length;
+      const teamSize =
+        matchRosterSize > 0 ? matchRosterSize : after.battingTeam.players.length;
       const allOut = teamSize > 0 && after.totalWickets >= Math.max(1, teamSize - 1);
       const oversComplete = after.totalBalls >= after.match.oversPerSide * 6;
 

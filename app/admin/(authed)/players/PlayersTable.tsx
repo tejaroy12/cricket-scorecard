@@ -10,7 +10,7 @@ type PlayerRow = {
   jerseyNumber: number | null;
   role: string;
   battingStyle: string;
-  team: Team;
+  team: Team | null;
   battingHistoryCount: number;
   bowlingHistoryCount: number;
 };
@@ -31,11 +31,17 @@ export function PlayersTable({
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return players.filter((p) => {
-      if (teamFilter && p.team.id !== teamFilter) return false;
+      if (teamFilter) {
+        if (teamFilter === "__none__") {
+          if (p.team) return false;
+        } else if (p.team?.id !== teamFilter) {
+          return false;
+        }
+      }
       if (roleFilter && p.role !== roleFilter) return false;
       if (!q) return true;
       const hay =
-        `${p.name} ${p.team.name} ${p.role} ${p.battingStyle} ${p.jerseyNumber ?? ""}`.toLowerCase();
+        `${p.name} ${p.team?.name ?? "free agent"} ${p.role} ${p.battingStyle} ${p.jerseyNumber ?? ""}`.toLowerCase();
       return hay.includes(q);
     });
   }, [players, search, teamFilter, roleFilter]);
@@ -61,6 +67,7 @@ export function PlayersTable({
               onChange={(e) => setTeamFilter(e.target.value)}
             >
               <option value="">All teams</option>
+              <option value="__none__">Free agents (no team)</option>
               {teams.map((t) => (
                 <option key={t.id} value={t.id}>
                   {t.name}
@@ -128,7 +135,15 @@ export function PlayersTable({
                       </span>
                     )}
                   </td>
-                  <td className="px-5 py-3 text-slate-700">{p.team.name}</td>
+                  <td className="px-5 py-3 text-slate-700">
+                    {p.team ? (
+                      p.team.name
+                    ) : (
+                      <span className="text-xs italic text-slate-400">
+                        Free agent
+                      </span>
+                    )}
+                  </td>
                   <td className="px-5 py-3 text-slate-700">
                     {p.role.replace("_", "-").toLowerCase()}
                   </td>

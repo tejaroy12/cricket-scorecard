@@ -4,8 +4,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 
-type Player = { id: string; name: string; jerseyNumber?: number | null; teamId: string };
+type Player = { id: string; name: string; jerseyNumber?: number | null; teamId?: string | null };
 type Team = { id: string; name: string; shortName: string; players: Player[] };
+type MatchPlayer = { id: string; matchId: string; playerId: string; side: number; player: Player };
 type BattingEntry = {
   id: string;
   playerId: string;
@@ -89,7 +90,22 @@ type MatchState = {
   currentInningsId: string | null;
   resultText: string | null;
   awards?: MatchAwards;
+  matchPlayers?: MatchPlayer[];
 };
+
+// Returns the lineup for a given side (1 or 2). Prefers per-match roster
+// (MatchPlayer) when present; falls back to the legacy team.players list so
+// matches created before the roster picker still work.
+function getRosterForTeam(state: MatchState, teamId: string): Player[] {
+  const side = state.team1.id === teamId ? 1 : state.team2.id === teamId ? 2 : 0;
+  const fromMatch = (state.matchPlayers ?? [])
+    .filter((mp) => mp.side === side)
+    .map((mp) => mp.player);
+  if (fromMatch.length > 0) return fromMatch;
+  if (state.team1.id === teamId) return state.team1.players;
+  if (state.team2.id === teamId) return state.team2.players;
+  return [];
+}
 
 export default function ScoringConsole({ initial }: { initial: MatchState }) {
   const router = useRouter();
@@ -278,8 +294,8 @@ function TossPanel({ state, onSubmit, busy }: { state: MatchState; onSubmit: (b:
   const [tossWinnerId, setWinner] = useState<string>(state.team1.id);
   const [tossDecision, setDecision] = useState<"BAT" | "BOWL">("BAT");
 
-  const team1Players = state.team1.players;
-  const team2Players = state.team2.players;
+  const team1Players = getRosterForTeam(state, state.team1.id);
+  const team2Players = getRosterForTeam(state, state.team2.id);
   const lacking =
     team1Players.length < 2 || team2Players.length < 2;
 
@@ -410,8 +426,8 @@ function ScoringPanel({
   onStartSecondInnings: () => void;
   onComplete: () => void;
 }) {
-  const battingTeamPlayers = innings.battingTeam.players;
-  const bowlingTeamPlayers = innings.bowlingTeam.players;
+  const battingTeamPlayers = getRosterForTeam(state, innings.battingTeamId);
+  const bowlingTeamPlayers = getRosterForTeam(state, innings.bowlingTeamId);
 
   const onCrease = innings.battingEntries.filter((b) => b.isOnCrease);
   const striker = onCrease.find((b) => b.isStriker);

@@ -1,92 +1,116 @@
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
+import { NewMatchForm } from "./NewMatchForm";
 
 export const dynamic = "force-dynamic";
 
-async function createMatch(formData: FormData) {
+type CreateMatchInput = {
+  team1Id: string;
+  team2Id: string;
+  venue: string;
+  oversPerSide: number;
+  matchDate: string;
+  team1PlayerIds: string[];
+  team2PlayerIds: string[];
+};
+
+async function createMatchAction(
+  input: CreateMatchInput,
+): Promise<{ ok: boolean; error?: string }> {
   "use server";
   const { isAuthenticated } = await import("@/lib/auth");
-  if (!isAuthenticated()) throw new Error("Unauthorized");
+  if (!isAuthenticated()) return { ok: false, error: "Unauthorized" };
 
-  const team1Id = String(formData.get("team1Id") || "");
-  const team2Id = String(formData.get("team2Id") || "");
-  const venue = String(formData.get("venue") || "Hitachi Sports Ground").trim() || "Hitachi Sports Ground";
-  const oversPerSide = Number(formData.get("oversPerSide") || 20);
-  const matchDateStr = String(formData.get("matchDate") || "");
-  const matchDate = matchDateStr ? new Date(matchDateStr) : new Date();
+  const { team1Id, team2Id, venue, oversPerSide, matchDate } = input;
+  const team1PlayerIds = Array.from(new Set(input.team1PlayerIds || []));
+  const team2PlayerIds = Array.from(new Set(input.team2PlayerIds || []));
 
-  if (!team1Id || !team2Id || team1Id === team2Id) {
-    throw new Error("Pick two different teams");
+  if (!team1Id || !team2Id) return { ok: false, error: "Pick both teams." };
+  if (team1Id === team2Id)
+    return { ok: false, error: "Team 1 and Team 2 must be different." };
+  if (team1PlayerIds.length < 2 || team2PlayerIds.length < 2) {
+    return {
+      ok: false,
+      error: "Each side needs at least 2 players.",
+    };
+  }
+  // Defensive: ensure no overlap between sides
+  const overlap = team1PlayerIds.filter((id) => team2PlayerIds.includes(id));
+  if (overlap.length > 0) {
+    return {
+      ok: false,
+      error: "A player can't be on both sides.",
+    };
   }
 
-  const m = await prisma.match.create({
-    data: {
-      team1Id,
-      team2Id,
-      venue,
-      oversPerSide: Number.isFinite(oversPerSide) ? oversPerSide : 20,
-      matchDate,
-      status: "SCHEDULED",
-    },
+  const date = matchDate ? new Date(matchDate) : new Date();
+  const overs = Number.isFinite(oversPerSide) ? oversPerSide : 20;
+
+  const created = await prisma.$transaction(async (tx) => {
+    const match = await tx.match.create({
+      data: {
+        team1Id,
+        team2Id,
+        venue: venue || "Hitachi Sports Ground",
+        oversPerSide: overs,
+        matchDate: date,
+        status: "SCHEDULED",
+      },
+    });
+
+    const rows = [
+      ...team1PlayerIds.map((pid) => ({
+        matchId: match.id,
+        playerId: pid,
+        side: 1,
+      })),
+      ...team2PlayerIds.map((pid) => ({
+        matchId: match.id,
+        playerId: pid,
+        side: 2,
+      })),
+    ];
+
+    if (rows.length > 0) {
+      await tx.matchPlayer.createMany({ data: rows });
+    }
+    return match;
   });
 
-  redirect(`/admin/matches/${m.id}`);
+  redirect(`/admin/matches/${created.id}`);
 }
 
 export default async function NewMatchPage() {
-  const teams = await prisma.team.findMany({ orderBy: { name: "asc" } });
+  const [teams, players] = await Promise.all([
+    prisma.team.findMany({ orderBy: { name: "asc" } }),
+    prisma.player.findMany({
+      orderBy: { name: "asc" },
+      include: { team: true },
+    }),
+  ]);
 
   return (
-    <div className="max-w-2xl space-y-6">
+    <div className="max-w-5xl space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-slate-900">New match</h1>
-        <p className="text-sm text-slate-500">Schedule a fixture between two teams.</p>
+        <p className="text-sm text-slate-500">
+          Pick the two sides and assemble each lineup from your player database
+          — players don&apos;t have to belong to those teams.
+        </p>
       </div>
 
-      {teams.length < 2 ? (
-        <div className="card p-6 text-sm text-slate-600">
-          You need at least two teams to create a match.
-        </div>
-      ) : (
-        <form action={createMatch} className="card space-y-4 p-6">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <label className="label">Team 1</label>
-              <select className="input" name="team1Id" required defaultValue="">
-                <option value="" disabled>Select team…</option>
-                {teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="label">Team 2</label>
-              <select className="input" name="team2Id" required defaultValue="">
-                <option value="" disabled>Select team…</option>
-                {teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-              </select>
-            </div>
-          </div>
-          <div className="grid gap-4 sm:grid-cols-3">
-            <div className="sm:col-span-2">
-              <label className="label">Venue</label>
-              <input className="input" name="venue" defaultValue="Hitachi Sports Ground" />
-            </div>
-            <div>
-              <label className="label">Overs / side</label>
-              <input className="input" name="oversPerSide" type="number" min={1} max={50} defaultValue={20} />
-            </div>
-          </div>
-          <div>
-            <label className="label">Date & time</label>
-            <input
-              className="input"
-              type="datetime-local"
-              name="matchDate"
-              defaultValue={new Date().toISOString().slice(0, 16)}
-            />
-          </div>
-          <button type="submit" className="btn-primary">Create match</button>
-        </form>
-      )}
+      <NewMatchForm
+        teams={teams.map((t) => ({ id: t.id, name: t.name }))}
+        players={players.map((p) => ({
+          id: p.id,
+          name: p.name,
+          role: p.role,
+          battingStyle: p.battingStyle,
+          jerseyNumber: p.jerseyNumber,
+          team: p.team ? { id: p.team.id, name: p.team.name } : null,
+        }))}
+        createMatchAction={createMatchAction}
+      />
     </div>
   );
 }

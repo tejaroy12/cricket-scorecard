@@ -9,6 +9,9 @@ export async function getMatchState(matchId: string) {
       team1: { include: { players: true } },
       team2: { include: { players: true } },
       tossWinner: true,
+      matchPlayers: {
+        include: { player: true },
+      },
       innings: {
         include: {
           battingTeam: { include: { players: true } },

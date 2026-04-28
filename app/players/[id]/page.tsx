@@ -45,9 +45,13 @@ export default async function PlayerProfilePage({
           </div>
           <h1 className="text-3xl font-bold text-slate-900">{player.name}</h1>
           <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-slate-600">
-            <Link href={`/teams/${player.team.id}`} className="font-medium text-hitachi hover:underline">
-              {player.team.name}
-            </Link>
+            {player.team ? (
+              <Link href={`/teams/${player.team.id}`} className="font-medium text-hitachi hover:underline">
+                {player.team.name}
+              </Link>
+            ) : (
+              <span className="italic text-slate-500">Free agent</span>
+            )}
             <span>·</span>
             <span>{prettyRole(player.role)}</span>
             <span>·</span>
@@ -70,7 +74,7 @@ export default async function PlayerProfilePage({
           <SharePlayerButton
             playerId={player.id}
             playerName={player.name}
-            teamName={player.team.name}
+            teamName={player.team?.name ?? "Free agent"}
           />
           {isAdmin && (
             <Link

@@ -9,3 +9,4 @@ build/
 prisma/dev.db
 prisma/dev.db-journal
 .vscode/
+tsconfig.tsbuildinfo

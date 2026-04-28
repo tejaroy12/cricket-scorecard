@@ -26,7 +26,7 @@ export type MatchAwards = {
  *    (penalises only economy worse than 6 RPO)
  */
 export async function computeMatchAwards(matchId: string): Promise<MatchAwards> {
-  const [battingEntries, bowlingEntries] = await Promise.all([
+  const [battingEntries, bowlingEntries, match] = await Promise.all([
     prisma.battingEntry.findMany({
       where: { innings: { matchId } },
       include: { player: { include: { team: true } } },
@@ -35,7 +35,32 @@ export async function computeMatchAwards(matchId: string): Promise<MatchAwards> 
       where: { innings: { matchId } },
       include: { player: { include: { team: true } } },
     }),
+    prisma.match.findUnique({
+      where: { id: matchId },
+      include: {
+        team1: { select: { id: true, name: true } },
+        team2: { select: { id: true, name: true } },
+        matchPlayers: { select: { playerId: true, side: true } },
+      },
+    }),
   ]);
+
+  // Map: playerId -> team name they played for in THIS match (per-match roster
+  // takes precedence over Player.team for display).
+  const matchTeamByPlayer = new Map<string, string>();
+  if (match) {
+    for (const mp of match.matchPlayers) {
+      const name =
+        mp.side === 1
+          ? match.team1.name
+          : mp.side === 2
+          ? match.team2.name
+          : null;
+      if (name) matchTeamByPlayer.set(mp.playerId, name);
+    }
+  }
+  const teamNameFor = (playerId: string, fallback: string | null | undefined) =>
+    matchTeamByPlayer.get(playerId) ?? fallback ?? "Free agent";
 
   // -- Best batter ---------------------------------------------------------
   let bestBatter: Award | null = null;
@@ -57,7 +82,7 @@ export async function computeMatchAwards(matchId: string): Promise<MatchAwards> 
       bestBatter = {
         playerId: b.playerId,
         playerName: b.player.name,
-        teamName: b.player.team.name,
+        teamName: teamNameFor(b.playerId, b.player.team?.name),
         headline: `${b.runs} (${b.balls})${b.isOut ? "" : "*"}`,
         caption: `${b.fours} fours · ${b.sixes} sixes · SR ${sr || "-"}`,
       };
@@ -80,7 +105,7 @@ export async function computeMatchAwards(matchId: string): Promise<MatchAwards> 
       bestBowler = {
         playerId: b.playerId,
         playerName: b.player.name,
-        teamName: b.player.team.name,
+        teamName: teamNameFor(b.playerId, b.player.team?.name),
         headline: `${b.wickets}/${b.runsConceded}`,
         caption: `${formatOvers(b.balls)} ov · Econ ${econ || "-"}`,
       };
@@ -105,7 +130,7 @@ export async function computeMatchAwards(matchId: string): Promise<MatchAwards> 
     const cur = agg.get(b.playerId) ?? {
       playerId: b.playerId,
       playerName: b.player.name,
-      teamName: b.player.team.name,
+      teamName: teamNameFor(b.playerId, b.player.team?.name),
       runs: 0,
       balls: 0,
       fours: 0,
@@ -124,7 +149,7 @@ export async function computeMatchAwards(matchId: string): Promise<MatchAwards> 
     const cur = agg.get(b.playerId) ?? {
       playerId: b.playerId,
       playerName: b.player.name,
-      teamName: b.player.team.name,
+      teamName: teamNameFor(b.playerId, b.player.team?.name),
       runs: 0,
       balls: 0,
       fours: 0,

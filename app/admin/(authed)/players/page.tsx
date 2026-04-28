@@ -35,14 +35,19 @@ async function createPlayer(formData: FormData) {
   if (!isAuthenticated()) throw new Error("Unauthorized");
 
   const name = String(formData.get("name") || "").trim();
-  const teamId = String(formData.get("teamId") || "");
+  const teamIdRaw = String(formData.get("teamId") || "").trim();
+  const teamId = teamIdRaw || null;
   const role = String(formData.get("role") || "BATTER");
   const battingStyle = String(formData.get("battingStyle") || "RHB");
   const bowlingStyle = String(formData.get("bowlingStyle") || "").trim();
   const jerseyNumberRaw = String(formData.get("jerseyNumber") || "").trim();
   const jerseyNumber = jerseyNumberRaw ? Number(jerseyNumberRaw) : null;
 
-  if (!name || !teamId) return;
+  if (!name) {
+    setFlash("Player name is required.", "err");
+    return;
+  }
+
   await prisma.player.create({
     data: {
       name,
@@ -56,7 +61,7 @@ async function createPlayer(formData: FormData) {
   setFlash(`Added "${name}".`);
   revalidatePath("/admin/players");
   revalidatePath("/players");
-  revalidatePath(`/teams/${teamId}`);
+  if (teamId) revalidatePath(`/teams/${teamId}`);
 }
 
 async function deletePlayer(formData: FormData) {
@@ -101,14 +106,14 @@ async function deletePlayer(formData: FormData) {
   setFlash(`Deleted "${player.name}".`);
   revalidatePath("/admin/players");
   revalidatePath("/players");
-  revalidatePath(`/teams/${player.teamId}`);
+  if (player.teamId) revalidatePath(`/teams/${player.teamId}`);
 }
 
 export default async function AdminPlayersPage() {
   const flash = readFlash();
   const [players, teams] = await Promise.all([
     prisma.player.findMany({
-      orderBy: [{ team: { name: "asc" } }, { name: "asc" }],
+      orderBy: { name: "asc" },
       include: {
         team: true,
         _count: {
@@ -131,58 +136,55 @@ export default async function AdminPlayersPage() {
 
       {flash && <FlashBanner flash={flash} />}
 
-      {teams.length === 0 ? (
-        <div className="card p-6 text-sm text-slate-600">
-          You need to create a team first.{" "}
-          <Link href="/admin/teams" className="font-medium text-hitachi hover:underline">
-            Create a team
-          </Link>
-        </div>
-      ) : (
-        <form action={createPlayer} className="card space-y-4 p-5">
+      <form action={createPlayer} className="card space-y-4 p-5">
+        <div>
           <h2 className="text-base font-semibold text-slate-900">Add player</h2>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            <div>
-              <label className="label">Full name</label>
-              <input className="input" name="name" required placeholder="Virat Kumar" />
-            </div>
-            <div>
-              <label className="label">Team</label>
-              <select className="input" name="teamId" required defaultValue="">
-                <option value="" disabled>Select team…</option>
-                {teams.map((t) => (
-                  <option key={t.id} value={t.id}>{t.name}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="label">Role</label>
-              <select className="input" name="role" defaultValue="BATTER">
-                <option value="BATTER">Batter</option>
-                <option value="BOWLER">Bowler</option>
-                <option value="ALL_ROUNDER">All-rounder</option>
-                <option value="WICKET_KEEPER">Wicket-keeper</option>
-              </select>
-            </div>
-            <div>
-              <label className="label">Batting style</label>
-              <select className="input" name="battingStyle" defaultValue="RHB">
-                <option value="RHB">Right-hand bat</option>
-                <option value="LHB">Left-hand bat</option>
-              </select>
-            </div>
-            <div>
-              <label className="label">Bowling style</label>
-              <input className="input" name="bowlingStyle" placeholder="e.g. Right-arm fast" />
-            </div>
-            <div>
-              <label className="label">Jersey #</label>
-              <input className="input" name="jerseyNumber" type="number" min={0} max={999} />
-            </div>
+          <p className="text-xs text-slate-500">
+            Add anyone who might play. A default team is optional — you pick
+            who plays for which side when creating each match.
+          </p>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div>
+            <label className="label">Full name</label>
+            <input className="input" name="name" required placeholder="Virat Kumar" />
           </div>
-          <button type="submit" className="btn-primary">Add player</button>
-        </form>
-      )}
+          <div>
+            <label className="label">Default team (optional)</label>
+            <select className="input" name="teamId" defaultValue="">
+              <option value="">— Free agent —</option>
+              {teams.map((t) => (
+                <option key={t.id} value={t.id}>{t.name}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="label">Role</label>
+            <select className="input" name="role" defaultValue="BATTER">
+              <option value="BATTER">Batter</option>
+              <option value="BOWLER">Bowler</option>
+              <option value="ALL_ROUNDER">All-rounder</option>
+              <option value="WICKET_KEEPER">Wicket-keeper</option>
+            </select>
+          </div>
+          <div>
+            <label className="label">Batting style</label>
+            <select className="input" name="battingStyle" defaultValue="RHB">
+              <option value="RHB">Right-hand bat</option>
+              <option value="LHB">Left-hand bat</option>
+            </select>
+          </div>
+          <div>
+            <label className="label">Bowling style</label>
+            <input className="input" name="bowlingStyle" placeholder="e.g. Right-arm fast" />
+          </div>
+          <div>
+            <label className="label">Jersey #</label>
+            <input className="input" name="jerseyNumber" type="number" min={0} max={999} />
+          </div>
+        </div>
+        <button type="submit" className="btn-primary">Add player</button>
+      </form>
 
       <PlayersTable
         players={players.map((p) => ({
@@ -191,7 +193,7 @@ export default async function AdminPlayersPage() {
           jerseyNumber: p.jerseyNumber,
           role: p.role,
           battingStyle: p.battingStyle,
-          team: { id: p.team.id, name: p.team.name },
+          team: p.team ? { id: p.team.id, name: p.team.name } : null,
           battingHistoryCount: p._count.battingEntries,
           bowlingHistoryCount: p._count.bowlingEntries,
         }))}

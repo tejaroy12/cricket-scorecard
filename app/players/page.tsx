@@ -64,7 +64,13 @@ export default async function PlayersPage() {
                         </div>
                       </Link>
                     </td>
-                    <td className="px-5 py-3 text-slate-700 whitespace-nowrap">{p.team.name}</td>
+                    <td className="px-5 py-3 text-slate-700 whitespace-nowrap">
+                      {p.team ? (
+                        p.team.name
+                      ) : (
+                        <span className="text-xs italic text-slate-400">Free agent</span>
+                      )}
+                    </td>
                     <td className="px-5 py-3 text-slate-700">{p.role.replace("_", "-").toLowerCase()}</td>
                     <td className="px-5 py-3 text-slate-700">{p.battingStyle}</td>
                     <td className="px-5 py-3 text-slate-700">{p.bowlingStyle ?? "-"}</td>

@@ -37,17 +37,34 @@ model Player {
   jerseyNumber  Int?
   createdAt     DateTime @default(now())
 
-  teamId        String
-  team          Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  // Optional "home" / default team. Players can also be added to either side
+  // of any match via MatchPlayer, regardless of this default.
+  teamId        String?
+  team          Team?    @relation(fields: [teamId], references: [id], onDelete: SetNull)
 
-  battingEntries  BattingEntry[]
-  bowlingEntries  BowlingEntry[]
-  ballsAsBatter   Ball[]   @relation("Striker")
-  ballsAsNonStriker Ball[] @relation("NonStriker")
-  ballsAsBowler   Ball[]   @relation("Bowler")
-  dismissals      Ball[]   @relation("DismissedPlayer")
+  battingEntries   BattingEntry[]
+  bowlingEntries   BowlingEntry[]
+  ballsAsBatter    Ball[]   @relation("Striker")
+  ballsAsNonStriker Ball[]  @relation("NonStriker")
+  ballsAsBowler    Ball[]   @relation("Bowler")
+  dismissals       Ball[]   @relation("DismissedPlayer")
+  matchAppearances MatchPlayer[]
 
   @@index([teamId])
+}
+
+// Per-match roster: which players are on side 1 vs side 2 for this match.
+// Supercedes Player.teamId for the purposes of selecting batters/bowlers.
+model MatchPlayer {
+  id        String  @id @default(cuid())
+  matchId   String
+  match     Match   @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  playerId  String
+  player    Player  @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  side      Int     // 1 or 2
+
+  @@unique([matchId, playerId])
+  @@index([matchId, side])
 }
 
 model Match {
@@ -74,6 +91,7 @@ model Match {
   updatedAt     DateTime @updatedAt
 
   innings       Innings[]
+  matchPlayers  MatchPlayer[]
 
   @@index([status])
   @@index([matchDate])

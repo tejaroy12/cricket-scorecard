@@ -2,6 +2,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getPlayerCareerStats } from "@/lib/stats";
+import { isAuthenticated } from "@/lib/auth";
+import SharePlayerButton from "./SharePlayerButton";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +19,7 @@ export default async function PlayerProfilePage({
   if (!player) notFound();
 
   const stats = await getPlayerCareerStats(player.id);
+  const isAdmin = isAuthenticated();
 
   const recentBatting = await prisma.battingEntry.findMany({
     where: { playerId: player.id },
@@ -62,6 +65,22 @@ export default async function PlayerProfilePage({
               </>
             )}
           </div>
+        </div>
+        <div className="flex flex-wrap items-start gap-2 sm:flex-col sm:items-end">
+          <SharePlayerButton
+            playerId={player.id}
+            playerName={player.name}
+            teamName={player.team.name}
+          />
+          {isAdmin && (
+            <Link
+              href={`/admin/players/${player.id}/edit`}
+              className="btn-ghost"
+            >
+              <EditIcon />
+              Edit
+            </Link>
+          )}
         </div>
       </div>
 
@@ -174,6 +193,26 @@ function StatTile({
         {label}
       </div>
     </div>
+  );
+}
+
+function EditIcon() {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4Z" />
+    </svg>
   );
 }
 

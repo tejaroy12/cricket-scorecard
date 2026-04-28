@@ -229,25 +229,34 @@ export default async function AdminPlayersPage() {
                     )}
                   </td>
                   <td className="px-5 py-3 text-right">
-                    <form action={deletePlayer} className="inline">
-                      <input type="hidden" name="id" value={p.id} />
-                      <button
-                        type="submit"
-                        title={
-                          hasHistory
-                            ? "This player has match history and cannot be deleted."
-                            : "Delete player"
-                        }
-                        className={
-                          hasHistory
-                            ? "rounded-md px-2 py-1 text-xs font-medium text-slate-400 cursor-not-allowed"
-                            : "rounded-md px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
-                        }
-                        disabled={hasHistory}
+                    <div className="inline-flex items-center gap-1">
+                      <Link
+                        href={`/admin/players/${p.id}/edit`}
+                        className="rounded-md px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100"
+                        title="Edit player"
                       >
-                        Delete
-                      </button>
-                    </form>
+                        Edit
+                      </Link>
+                      <form action={deletePlayer} className="inline">
+                        <input type="hidden" name="id" value={p.id} />
+                        <button
+                          type="submit"
+                          title={
+                            hasHistory
+                              ? "This player has match history and cannot be deleted."
+                              : "Delete player"
+                          }
+                          className={
+                            hasHistory
+                              ? "rounded-md px-2 py-1 text-xs font-medium text-slate-400 cursor-not-allowed"
+                              : "rounded-md px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
+                          }
+                          disabled={hasHistory}
+                        >
+                          Delete
+                        </button>
+                      </form>
+                    </div>
                   </td>
                 </tr>
               );

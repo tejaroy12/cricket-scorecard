@@ -96,13 +96,13 @@ export default function ScoringConsole({ initial }: { initial: MatchState }) {
   const [state, setState] = useState<MatchState>(initial);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [autoMessage, setAutoMessage] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     const r = await fetch(`/api/matches/${state.id}/state`, { cache: "no-store" });
     if (r.ok) setState(await r.json());
   }, [state.id]);
 
-  // Auto-refresh every 6s while live
   useEffect(() => {
     if (state.status !== "LIVE") return;
     const t = setInterval(refresh, 6000);
@@ -114,27 +114,49 @@ export default function ScoringConsole({ initial }: { initial: MatchState }) {
     [state.innings, state.currentInningsId],
   );
 
-  async function call(url: string, body?: any) {
-    setBusy(true);
-    setError(null);
-    try {
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: body ? JSON.stringify(body) : undefined,
-      });
-      if (!res.ok) {
-        const j = await res.json().catch(() => ({}));
-        throw new Error(j.error || "Request failed");
+  const call = useCallback(
+    async (url: string, body?: any) => {
+      setBusy(true);
+      setError(null);
+      try {
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: body ? JSON.stringify(body) : undefined,
+        });
+        if (!res.ok) {
+          const j = await res.json().catch(() => ({}));
+          throw new Error(j.error || "Request failed");
+        }
+        await refresh();
+        router.refresh();
+      } catch (e: any) {
+        setError(e.message || "Failed");
+      } finally {
+        setBusy(false);
       }
-      await refresh();
-      router.refresh();
-    } catch (e: any) {
-      setError(e.message || "Failed");
-    } finally {
-      setBusy(false);
-    }
-  }
+    },
+    [refresh, router],
+  );
+
+  // Auto-transition: when innings 1 closes (all out / overs done / chase chased)
+  // and there's no innings 2 yet, automatically start the 2nd innings after a
+  // brief pause so the user can see the "innings over" message.
+  useEffect(() => {
+    if (state.status !== "LIVE") return;
+    if (!currentInnings) return;
+    if (!currentInnings.isClosed) return;
+    if (currentInnings.inningsNumber !== 1) return;
+    if (state.innings.some((i) => i.inningsNumber === 2)) return;
+
+    setAutoMessage("Innings 1 complete — starting 2nd innings…");
+    const t = setTimeout(() => {
+      call(`/api/matches/${state.id}/start-second-innings`).finally(() =>
+        setAutoMessage(null),
+      );
+    }, 2000);
+    return () => clearTimeout(t);
+  }, [state, currentInnings, call]);
 
   return (
     <div className="space-y-6">
@@ -143,6 +165,12 @@ export default function ScoringConsole({ initial }: { initial: MatchState }) {
       {error && (
         <div className="rounded-md bg-red-50 px-4 py-2 text-sm text-red-700 ring-1 ring-red-100">
           {error}
+        </div>
+      )}
+
+      {autoMessage && (
+        <div className="rounded-md bg-amber-50 px-4 py-2 text-sm font-medium text-amber-800 ring-1 ring-amber-100">
+          {autoMessage}
         </div>
       )}
 
@@ -172,6 +200,7 @@ export default function ScoringConsole({ initial }: { initial: MatchState }) {
         <FullScorecardSection
           innings={state.innings}
           awards={state.awards}
+          matchStatus={state.status}
           defaultOpen={state.status === "COMPLETED"}
         />
       )}
@@ -384,17 +413,21 @@ function ScoringPanel({
   const bowlingTeamPlayers = innings.bowlingTeam.players;
 
   const onCrease = innings.battingEntries.filter((b) => b.isOnCrease);
-  const needsOpeners = onCrease.length < 2;
-
   const striker = onCrease.find((b) => b.isStriker);
   const nonStriker = onCrease.find((b) => !b.isStriker);
 
   const currentBowler = innings.bowlingEntries.slice().sort((a, b) => b.balls - a.balls)[0];
 
-  // End of innings: all out (10 wickets) OR all overs bowled
+  // End of innings: closed flag from server, all out (team-size aware), all overs bowled,
+  // OR (2nd innings) chase target reached.
+  const teamSize = battingTeamPlayers.length;
   const maxOversReached = innings.totalBalls >= state.oversPerSide * 6;
-  const allOut = innings.totalWickets >= 10;
-  const inningsOver = maxOversReached || allOut;
+  const allOut = teamSize > 0 && innings.totalWickets >= Math.max(1, teamSize - 1);
+  const inningsOver = innings.isClosed || maxOversReached || allOut;
+
+  // Only show the openers form for a brand-new innings, never for one that has
+  // already ended (otherwise after all-out the UI would ask for new openers).
+  const needsOpeners = !inningsOver && onCrease.length < 2;
 
   const isFirstInnings = innings.inningsNumber === 1;
 
@@ -422,6 +455,9 @@ function ScoringPanel({
               nonStriker={nonStriker?.player}
               bowler={currentBowler?.player}
               battingTeamPlayers={battingTeamPlayers}
+              dismissedPlayerIds={innings.battingEntries
+                .filter((b) => b.isOut)
+                .map((b) => b.playerId)}
               busy={busy}
               onBall={onBall}
               onUndo={onUndo}
@@ -429,7 +465,7 @@ function ScoringPanel({
           ) : (
             <div className="rounded-lg bg-emerald-50 p-4 text-sm text-emerald-800 ring-1 ring-emerald-100">
               Innings complete: {innings.totalRuns}/{innings.totalWickets} in {innings.oversText} overs
-              {allOut ? " (all out)" : ""}.
+              {allOut ? " (all out)" : maxOversReached ? " (overs complete)" : ""}.
             </div>
           )}
 
@@ -550,6 +586,7 @@ function BallEntry({
   nonStriker,
   bowler,
   battingTeamPlayers,
+  dismissedPlayerIds,
   busy,
   onBall,
   onUndo,
@@ -558,6 +595,7 @@ function BallEntry({
   nonStriker?: Player;
   bowler?: Player;
   battingTeamPlayers: Player[];
+  dismissedPlayerIds: string[];
   busy: boolean;
   onBall: (b: any) => void;
   onUndo: () => void;
@@ -596,9 +634,14 @@ function BallEntry({
     reset();
   }
 
-  // Available new batters = all batters in the batting team minus those who already batted
+  // Available new batters = batting team minus the two on crease and minus
+  // anyone who has already been dismissed in this innings.
+  const dismissed = new Set(dismissedPlayerIds);
   const availableNewBatters = battingTeamPlayers.filter(
-    (p) => p.id !== striker?.id && p.id !== nonStriker?.id,
+    (p) =>
+      p.id !== striker?.id &&
+      p.id !== nonStriker?.id &&
+      !dismissed.has(p.id),
   );
 
   return (
@@ -776,10 +819,12 @@ function BallChip({ ball }: { ball: Ball }) {
 function FullScorecardSection({
   innings,
   awards,
+  matchStatus,
   defaultOpen,
 }: {
   innings: Innings[];
   awards?: MatchAwards;
+  matchStatus: string;
   defaultOpen: boolean;
 }) {
   if (innings.length === 0) return null;
@@ -801,7 +846,7 @@ function FullScorecardSection({
         </summary>
 
         <div className="space-y-6 border-t border-slate-100 px-5 py-5">
-          <AwardsPanel awards={awards} />
+          {matchStatus === "COMPLETED" && <AwardsPanel awards={awards} />}
           {innings.map((i) => (
             <InningsScorecardBlock key={i.id} innings={i} />
           ))}

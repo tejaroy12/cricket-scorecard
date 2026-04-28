@@ -168,6 +168,7 @@ export default function LiveMatchView({ initial }: { initial: MatchState }) {
       <FullScorecardSection
         innings={state.innings}
         awards={state.awards}
+        matchStatus={state.status}
         defaultOpen={state.status === "COMPLETED"}
       />
     </div>
@@ -302,10 +303,12 @@ function BallChip({ ball }: { ball: Ball }) {
 function FullScorecardSection({
   innings,
   awards,
+  matchStatus,
   defaultOpen,
 }: {
   innings: Innings[];
   awards?: MatchAwards;
+  matchStatus: string;
   defaultOpen: boolean;
 }) {
   if (innings.length === 0) return null;
@@ -326,7 +329,7 @@ function FullScorecardSection({
         </summary>
 
         <div className="space-y-6 border-t border-slate-100 px-5 py-5">
-          <AwardsPanel awards={awards} />
+          {matchStatus === "COMPLETED" && <AwardsPanel awards={awards} />}
 
           {innings.map((i) => (
             <InningsScorecardBlock key={i.id} innings={i} />

@@ -250,6 +250,35 @@ export async function applyBall(input: BallInput) {
       });
     }
 
+    // Auto-close innings when all out, all overs bowled, or chase target reached
+    const after = await tx.innings.findUnique({
+      where: { id: input.inningsId },
+      include: {
+        match: { select: { id: true, oversPerSide: true } },
+        battingTeam: { select: { players: { select: { id: true } } } },
+      },
+    });
+    if (after && !after.isClosed) {
+      const teamSize = after.battingTeam.players.length;
+      const allOut = teamSize > 0 && after.totalWickets >= Math.max(1, teamSize - 1);
+      const oversComplete = after.totalBalls >= after.match.oversPerSide * 6;
+
+      let chaseWon = false;
+      const innings1 = await tx.innings.findFirst({
+        where: { matchId: after.match.id, inningsNumber: 1 },
+      });
+      if (innings1 && after.inningsNumber === 2 && after.totalRuns > innings1.totalRuns) {
+        chaseWon = true;
+      }
+
+      if (allOut || oversComplete || chaseWon) {
+        await tx.innings.update({
+          where: { id: input.inningsId },
+          data: { isClosed: true },
+        });
+      }
+    }
+
     return { ok: true };
   });
 }

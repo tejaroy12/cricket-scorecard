@@ -9,7 +9,15 @@ export async function POST(
   if (!isAuthenticated()) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const match = await prisma.match.findUnique({
     where: { id: params.id },
-    include: { innings: { include: { battingTeam: true } }, team1: true, team2: true },
+    include: {
+      innings: {
+        include: {
+          battingTeam: { include: { players: { select: { id: true } } } },
+        },
+      },
+      team1: true,
+      team2: true,
+    },
   });
   if (!match) return NextResponse.json({ error: "Match not found" }, { status: 404 });
 
@@ -22,7 +30,9 @@ export async function POST(
   if (innings1 && innings2) {
     if (innings2.totalRuns > innings1.totalRuns) {
       winnerTeamId = innings2.battingTeamId;
-      const wicketsLeft = 10 - innings2.totalWickets;
+      const chaseTeamSize = innings2.battingTeam.players.length;
+      const maxWickets = Math.max(1, chaseTeamSize - 1);
+      const wicketsLeft = Math.max(0, maxWickets - innings2.totalWickets);
       resultText = `${innings2.battingTeam.name} won by ${wicketsLeft} wicket${wicketsLeft === 1 ? "" : "s"}`;
     } else if (innings1.totalRuns > innings2.totalRuns) {
       winnerTeamId = innings1.battingTeamId;

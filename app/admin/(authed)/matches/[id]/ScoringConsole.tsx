@@ -182,6 +182,7 @@ export default function ScoringConsole({ initial }: { initial: MatchState }) {
         <>
           <InningsScorecard innings={currentInnings} />
           <ScoringPanel
+            key={currentInnings.id}
             state={state}
             innings={currentInnings}
             busy={busy}

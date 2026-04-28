@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { MatchCard } from "@/components/MatchCard";
+import { AutoRefresher } from "@/components/AutoRefresher";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -43,6 +44,8 @@ export default async function HomePage() {
 
   return (
     <div className="space-y-12">
+      {liveMatches.length > 0 && <AutoRefresher intervalMs={8000} />}
+
       <Hero teamCount={teamCount} playerCount={playerCount} liveCount={liveMatches.length} />
 
       {liveMatches.length > 0 && (

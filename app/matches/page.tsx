@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { MatchCard } from "@/components/MatchCard";
+import { AutoRefresher } from "@/components/AutoRefresher";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -20,6 +21,8 @@ export default async function MatchesPage() {
 
   return (
     <div className="space-y-10">
+      {live.length > 0 && <AutoRefresher intervalMs={8000} />}
+
       <div>
         <h1 className="text-3xl font-bold text-slate-900">All matches</h1>
         <p className="text-sm text-slate-500">

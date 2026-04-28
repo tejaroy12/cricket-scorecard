@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import Link from "next/link";
+import { PlayersTable } from "./PlayersTable";
 
 export const dynamic = "force-dynamic";
 
@@ -183,87 +184,20 @@ export default async function AdminPlayersPage() {
         </form>
       )}
 
-      <div className="card overflow-hidden">
-        <table className="w-full text-left text-sm">
-          <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-            <tr>
-              <th className="px-5 py-3">Player</th>
-              <th className="px-5 py-3">Team</th>
-              <th className="px-5 py-3">Role</th>
-              <th className="px-5 py-3">Bat</th>
-              <th className="px-5 py-3">History</th>
-              <th className="px-5 py-3 text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100 table-row-hover">
-            {players.length === 0 && (
-              <tr>
-                <td colSpan={6} className="px-5 py-10 text-center text-slate-500">
-                  No players yet.
-                </td>
-              </tr>
-            )}
-            {players.map((p) => {
-              const hasHistory =
-                p._count.battingEntries + p._count.bowlingEntries > 0;
-              return (
-                <tr key={p.id}>
-                  <td className="px-5 py-3">
-                    <Link href={`/players/${p.id}`} className="font-medium text-slate-900 hover:underline">
-                      {p.name}
-                    </Link>
-                    {p.jerseyNumber != null && (
-                      <span className="ml-2 text-xs text-slate-500">#{p.jerseyNumber}</span>
-                    )}
-                  </td>
-                  <td className="px-5 py-3 text-slate-700">{p.team.name}</td>
-                  <td className="px-5 py-3 text-slate-700">{p.role.replace("_", "-").toLowerCase()}</td>
-                  <td className="px-5 py-3 text-slate-700">{p.battingStyle}</td>
-                  <td className="px-5 py-3">
-                    {hasHistory ? (
-                      <span className="pill bg-blue-50 text-blue-700">
-                        {p._count.battingEntries} bat · {p._count.bowlingEntries} bowl
-                      </span>
-                    ) : (
-                      <span className="text-xs text-slate-400">None</span>
-                    )}
-                  </td>
-                  <td className="px-5 py-3 text-right">
-                    <div className="inline-flex items-center gap-1">
-                      <Link
-                        href={`/admin/players/${p.id}/edit`}
-                        className="rounded-md px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100"
-                        title="Edit player"
-                      >
-                        Edit
-                      </Link>
-                      <form action={deletePlayer} className="inline">
-                        <input type="hidden" name="id" value={p.id} />
-                        <button
-                          type="submit"
-                          title={
-                            hasHistory
-                              ? "This player has match history and cannot be deleted."
-                              : "Delete player"
-                          }
-                          className={
-                            hasHistory
-                              ? "rounded-md px-2 py-1 text-xs font-medium text-slate-400 cursor-not-allowed"
-                              : "rounded-md px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
-                          }
-                          disabled={hasHistory}
-                        >
-                          Delete
-                        </button>
-                      </form>
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+      <PlayersTable
+        players={players.map((p) => ({
+          id: p.id,
+          name: p.name,
+          jerseyNumber: p.jerseyNumber,
+          role: p.role,
+          battingStyle: p.battingStyle,
+          team: { id: p.team.id, name: p.team.name },
+          battingHistoryCount: p._count.battingEntries,
+          bowlingHistoryCount: p._count.bowlingEntries,
+        }))}
+        teams={teams.map((t) => ({ id: t.id, name: t.name }))}
+        deleteAction={deletePlayer}
+      />
     </div>
   );
 }

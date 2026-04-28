@@ -160,66 +160,68 @@ export default async function AdminTeamsPage() {
       </form>
 
       <div className="card overflow-hidden">
-        <table className="w-full text-left text-sm">
-          <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-            <tr>
-              <th className="px-5 py-3">Team</th>
-              <th className="px-5 py-3">Code</th>
-              <th className="px-5 py-3">Players</th>
-              <th className="px-5 py-3">Matches</th>
-              <th className="px-5 py-3 text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100 table-row-hover">
-            {teams.length === 0 && (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[560px] text-left text-sm">
+            <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
               <tr>
-                <td colSpan={5} className="px-5 py-10 text-center text-slate-500">
-                  No teams yet. Create one above.
-                </td>
+                <th className="px-5 py-3">Team</th>
+                <th className="px-5 py-3">Code</th>
+                <th className="px-5 py-3">Players</th>
+                <th className="px-5 py-3">Matches</th>
+                <th className="px-5 py-3 text-right">Actions</th>
               </tr>
-            )}
-            {teams.map((t) => {
-              const matches = t._count.homeMatches + t._count.awayMatches;
-              const blocked = matches > 0;
-              return (
-                <tr key={t.id}>
-                  <td className="px-5 py-3">
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-9 w-9 items-center justify-center rounded-md bg-slate-900 text-xs font-bold text-white">
-                        {(t.shortName || t.name).slice(0, 3).toUpperCase()}
-                      </div>
-                      <span className="font-medium text-slate-900">{t.name}</span>
-                    </div>
-                  </td>
-                  <td className="px-5 py-3 text-slate-600">{t.shortName}</td>
-                  <td className="px-5 py-3 tabular-nums">{t._count.players}</td>
-                  <td className="px-5 py-3 tabular-nums">{matches}</td>
-                  <td className="px-5 py-3 text-right">
-                    <form action={deleteTeam} className="inline">
-                      <input type="hidden" name="id" value={t.id} />
-                      <button
-                        type="submit"
-                        title={
-                          blocked
-                            ? "This team is part of one or more matches and cannot be deleted."
-                            : "Delete team"
-                        }
-                        className={
-                          blocked
-                            ? "rounded-md px-2 py-1 text-xs font-medium text-slate-400 cursor-not-allowed"
-                            : "rounded-md px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
-                        }
-                        disabled={blocked}
-                      >
-                        Delete
-                      </button>
-                    </form>
+            </thead>
+            <tbody className="divide-y divide-slate-100 table-row-hover">
+              {teams.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="px-5 py-10 text-center text-slate-500">
+                    No teams yet. Create one above.
                   </td>
                 </tr>
-              );
-            })}
-          </tbody>
-        </table>
+              )}
+              {teams.map((t) => {
+                const matches = t._count.homeMatches + t._count.awayMatches;
+                const blocked = matches > 0;
+                return (
+                  <tr key={t.id}>
+                    <td className="px-5 py-3">
+                      <div className="flex items-center gap-3 whitespace-nowrap">
+                        <div className="flex h-9 w-9 items-center justify-center rounded-md bg-slate-900 text-xs font-bold text-white">
+                          {(t.shortName || t.name).slice(0, 3).toUpperCase()}
+                        </div>
+                        <span className="font-medium text-slate-900">{t.name}</span>
+                      </div>
+                    </td>
+                    <td className="px-5 py-3 text-slate-600">{t.shortName}</td>
+                    <td className="px-5 py-3 tabular-nums">{t._count.players}</td>
+                    <td className="px-5 py-3 tabular-nums">{matches}</td>
+                    <td className="px-5 py-3 text-right">
+                      <form action={deleteTeam} className="inline">
+                        <input type="hidden" name="id" value={t.id} />
+                        <button
+                          type="submit"
+                          title={
+                            blocked
+                              ? "This team is part of one or more matches and cannot be deleted."
+                              : "Delete team"
+                          }
+                          className={
+                            blocked
+                              ? "rounded-md px-2 py-1 text-xs font-medium text-slate-400 cursor-not-allowed"
+                              : "rounded-md px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
+                          }
+                          disabled={blocked}
+                        >
+                          Delete
+                        </button>
+                      </form>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );

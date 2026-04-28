@@ -76,57 +76,61 @@ export default async function AdminMatchesPage() {
       )}
 
       <div className="card overflow-hidden">
-        <table className="w-full text-left text-sm">
-          <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-            <tr>
-              <th className="px-5 py-3">Match</th>
-              <th className="px-5 py-3">Date</th>
-              <th className="px-5 py-3">Status</th>
-              <th className="px-5 py-3 text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100 table-row-hover">
-            {matches.length === 0 && (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[640px] text-left text-sm">
+            <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
               <tr>
-                <td colSpan={4} className="px-5 py-10 text-center text-slate-500">
-                  No matches yet.{" "}
-                  <Link href="/admin/matches/new" className="font-medium text-hitachi hover:underline">
-                    Create one.
-                  </Link>
-                </td>
+                <th className="px-5 py-3">Match</th>
+                <th className="px-5 py-3">Date</th>
+                <th className="px-5 py-3">Status</th>
+                <th className="px-5 py-3 text-right">Actions</th>
               </tr>
-            )}
-            {matches.map((m) => (
-              <tr key={m.id}>
-                <td className="px-5 py-3">
-                  <div className="font-medium text-slate-900">
-                    {m.team1.name} vs {m.team2.name}
-                  </div>
-                  <div className="text-xs text-slate-500">{m.venue} · {m.oversPerSide} overs</div>
-                </td>
-                <td className="px-5 py-3 text-slate-700">
-                  {new Date(m.matchDate).toLocaleString("en-IN", {
-                    day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
-                  })}
-                </td>
-                <td className="px-5 py-3">
-                  <StatusPill status={m.status} />
-                </td>
-                <td className="px-5 py-3 text-right space-x-2">
-                  <Link href={`/admin/matches/${m.id}`} className="rounded-md bg-slate-900 px-3 py-1 text-xs font-medium text-white hover:bg-slate-800">
-                    {m.status === "LIVE" ? "Score live" : m.status === "SCHEDULED" ? "Manage" : "View"}
-                  </Link>
-                  <form action={deleteMatch} className="inline">
-                    <input type="hidden" name="id" value={m.id} />
-                    <button type="submit" className="rounded-md px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50">
-                      Delete
-                    </button>
-                  </form>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-slate-100 table-row-hover">
+              {matches.length === 0 && (
+                <tr>
+                  <td colSpan={4} className="px-5 py-10 text-center text-slate-500">
+                    No matches yet.{" "}
+                    <Link href="/admin/matches/new" className="font-medium text-hitachi hover:underline">
+                      Create one.
+                    </Link>
+                  </td>
+                </tr>
+              )}
+              {matches.map((m) => (
+                <tr key={m.id}>
+                  <td className="px-5 py-3">
+                    <div className="font-medium text-slate-900 whitespace-nowrap">
+                      {m.team1.name} vs {m.team2.name}
+                    </div>
+                    <div className="text-xs text-slate-500">{m.venue} · {m.oversPerSide} overs</div>
+                  </td>
+                  <td className="px-5 py-3 text-slate-700 whitespace-nowrap">
+                    {new Date(m.matchDate).toLocaleString("en-IN", {
+                      day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
+                    })}
+                  </td>
+                  <td className="px-5 py-3">
+                    <StatusPill status={m.status} />
+                  </td>
+                  <td className="px-5 py-3 text-right">
+                    <div className="inline-flex items-center gap-2 whitespace-nowrap">
+                      <Link href={`/admin/matches/${m.id}`} className="rounded-md bg-slate-900 px-3 py-1 text-xs font-medium text-white hover:bg-slate-800">
+                        {m.status === "LIVE" ? "Score live" : m.status === "SCHEDULED" ? "Manage" : "View"}
+                      </Link>
+                      <form action={deleteMatch} className="inline">
+                        <input type="hidden" name="id" value={m.id} />
+                        <button type="submit" className="rounded-md px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50">
+                          Delete
+                        </button>
+                      </form>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );

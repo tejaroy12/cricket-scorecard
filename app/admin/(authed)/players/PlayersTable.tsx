@@ -89,95 +89,86 @@ export function PlayersTable({
         </div>
       </div>
 
-      <table className="w-full text-left text-sm">
-        <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-          <tr>
-            <th className="px-5 py-3">Player</th>
-            <th className="px-5 py-3">Team</th>
-            <th className="px-5 py-3">Role</th>
-            <th className="px-5 py-3">Bat</th>
-            <th className="px-5 py-3">History</th>
-            <th className="px-5 py-3 text-right">Actions</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-100 table-row-hover">
-          {filtered.length === 0 && (
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[640px] text-left text-sm">
+          <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
             <tr>
-              <td colSpan={6} className="px-5 py-10 text-center text-slate-500">
-                {players.length === 0
-                  ? "No players yet."
-                  : "No players match the current filters."}
-              </td>
+              <th className="px-5 py-3">Player</th>
+              <th className="px-5 py-3">Team</th>
+              <th className="px-5 py-3">Role</th>
+              <th className="px-5 py-3">Bat</th>
+              <th className="px-5 py-3 text-right">Actions</th>
             </tr>
-          )}
-          {filtered.map((p) => {
-            const hasHistory =
-              p.battingHistoryCount + p.bowlingHistoryCount > 0;
-            return (
-              <tr key={p.id}>
-                <td className="px-5 py-3">
-                  <Link
-                    href={`/players/${p.id}`}
-                    className="font-medium text-slate-900 hover:underline"
-                  >
-                    {p.name}
-                  </Link>
-                  {p.jerseyNumber != null && (
-                    <span className="ml-2 text-xs text-slate-500">
-                      #{p.jerseyNumber}
-                    </span>
-                  )}
-                </td>
-                <td className="px-5 py-3 text-slate-700">{p.team.name}</td>
-                <td className="px-5 py-3 text-slate-700">
-                  {p.role.replace("_", "-").toLowerCase()}
-                </td>
-                <td className="px-5 py-3 text-slate-700">{p.battingStyle}</td>
-                <td className="px-5 py-3">
-                  {hasHistory ? (
-                    <span className="pill bg-blue-50 text-blue-700">
-                      {p.battingHistoryCount} bat ·{" "}
-                      {p.bowlingHistoryCount} bowl
-                    </span>
-                  ) : (
-                    <span className="text-xs text-slate-400">None</span>
-                  )}
-                </td>
-                <td className="px-5 py-3 text-right">
-                  <div className="inline-flex items-center gap-1">
-                    <Link
-                      href={`/admin/players/${p.id}/edit`}
-                      className="rounded-md px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100"
-                      title="Edit player"
-                    >
-                      Edit
-                    </Link>
-                    <form action={deleteAction} className="inline">
-                      <input type="hidden" name="id" value={p.id} />
-                      <button
-                        type="submit"
-                        title={
-                          hasHistory
-                            ? "This player has match history and cannot be deleted."
-                            : "Delete player"
-                        }
-                        className={
-                          hasHistory
-                            ? "rounded-md px-2 py-1 text-xs font-medium text-slate-400 cursor-not-allowed"
-                            : "rounded-md px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
-                        }
-                        disabled={hasHistory}
-                      >
-                        Delete
-                      </button>
-                    </form>
-                  </div>
+          </thead>
+          <tbody className="divide-y divide-slate-100 table-row-hover">
+            {filtered.length === 0 && (
+              <tr>
+                <td colSpan={5} className="px-5 py-10 text-center text-slate-500">
+                  {players.length === 0
+                    ? "No players yet."
+                    : "No players match the current filters."}
                 </td>
               </tr>
-            );
-          })}
-        </tbody>
-      </table>
+            )}
+            {filtered.map((p) => {
+              const hasHistory =
+                p.battingHistoryCount + p.bowlingHistoryCount > 0;
+              return (
+                <tr key={p.id}>
+                  <td className="px-5 py-3">
+                    <Link
+                      href={`/players/${p.id}`}
+                      className="font-medium text-slate-900 hover:underline"
+                    >
+                      {p.name}
+                    </Link>
+                    {p.jerseyNumber != null && (
+                      <span className="ml-2 text-xs text-slate-500">
+                        #{p.jerseyNumber}
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-5 py-3 text-slate-700">{p.team.name}</td>
+                  <td className="px-5 py-3 text-slate-700">
+                    {p.role.replace("_", "-").toLowerCase()}
+                  </td>
+                  <td className="px-5 py-3 text-slate-700">{p.battingStyle}</td>
+                  <td className="px-5 py-3 text-right">
+                    <div className="inline-flex items-center gap-1 whitespace-nowrap">
+                      <Link
+                        href={`/admin/players/${p.id}/edit`}
+                        className="rounded-md px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100"
+                        title="Edit player"
+                      >
+                        Edit
+                      </Link>
+                      <form action={deleteAction} className="inline">
+                        <input type="hidden" name="id" value={p.id} />
+                        <button
+                          type="submit"
+                          title={
+                            hasHistory
+                              ? "This player has match history and cannot be deleted."
+                              : "Delete player"
+                          }
+                          className={
+                            hasHistory
+                              ? "rounded-md px-2 py-1 text-xs font-medium text-slate-400 cursor-not-allowed"
+                              : "rounded-md px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
+                          }
+                          disabled={hasHistory}
+                        >
+                          Delete
+                        </button>
+                      </form>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

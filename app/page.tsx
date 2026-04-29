@@ -10,13 +10,14 @@ export const revalidate = 0;
 export default async function HomePage() {
   const me = await getCurrentPlayer();
 
-  // "Your matches": matches where the signed-in player is on the roster, OR
-  // (legacy fallback) plays for one of the two teams. We intentionally show
-  // LIVE first, then SCHEDULED, then the latest few COMPLETED so the user
-  // lands on relevant matches first.
+  // "Your matches": LIVE matches where the signed-in player is on the
+  // roster, OR (legacy fallback) plays for one of the two teams. We
+  // intentionally exclude completed and scheduled matches here — recent
+  // results live in their own section and upcoming fixtures show below.
   const myMatchesPromise = me
     ? prisma.match.findMany({
         where: {
+          status: "LIVE",
           OR: [
             { matchPlayers: { some: { playerId: me.id } } },
             ...(me.teamId
@@ -29,7 +30,7 @@ export default async function HomePage() {
           team2: true,
           innings: { include: { battingTeam: true } },
         },
-        orderBy: [{ status: "asc" }, { matchDate: "desc" }],
+        orderBy: { matchDate: "desc" },
         take: 6,
       })
     : Promise.resolve([] as any[]);
@@ -76,23 +77,15 @@ export default async function HomePage() {
     myMatchesPromise,
   ]);
 
-  // Order "Your matches": LIVE → SCHEDULED → COMPLETED (newest first), and
-  // dedupe so a match listed in "Your matches" doesn't also appear below.
-  const myMatches = (myMatchesAll as any[]).slice().sort((a, b) => {
-    const order = (s: string) =>
-      s === "LIVE" ? 0 : s === "SCHEDULED" ? 1 : 2;
-    const o = order(a.status) - order(b.status);
-    if (o !== 0) return o;
-    return new Date(b.matchDate).getTime() - new Date(a.matchDate).getTime();
-  });
+  // myMatches is already LIVE-only (see above) and ordered newest-first.
+  const myMatches = myMatchesAll as any[];
   const myMatchIds = new Set(myMatches.map((m) => m.id));
 
+  // Show all live matches by default; dedupe ones already listed in
+  // "Your matches" so a match isn't shown twice.
   const liveMatchesFiltered = liveMatches.filter((m) => !myMatchIds.has(m.id));
-  const upcomingMatchesFiltered = upcomingMatches.filter(
-    (m) => !myMatchIds.has(m.id),
-  );
 
-  const hasLive = liveMatches.length > 0 || myMatches.some((m) => m.status === "LIVE");
+  const hasLive = liveMatches.length > 0 || myMatches.length > 0;
 
   return (
     <div className="space-y-12">
@@ -106,20 +99,23 @@ export default async function HomePage() {
         teamCount={teamCount}
         playerCount={playerCount}
         liveCount={liveMatches.length}
+        myLiveCount={myMatches.length}
+        hasProfile={!!me}
       />
 
       {me && myMatches.length > 0 && (
-        <Section
-          title={`Your matches`}
-          subtitle={`Hi ${me.name.split(" ")[0]} — matches you're playing in`}
-          accent
-        >
+        <section id="your-matches" className="scroll-mt-20">
+          <SectionHeader
+            title="Your matches"
+            subtitle={`Hi ${me.name.split(" ")[0]} — live matches you're playing in`}
+            accent
+          />
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {myMatches.slice(0, 6).map((m: any) => (
               <MatchCard key={m.id} {...m} />
             ))}
           </div>
-        </Section>
+        </section>
       )}
 
       {liveMatchesFiltered.length > 0 && (
@@ -136,10 +132,10 @@ export default async function HomePage() {
         </Section>
       )}
 
-      {upcomingMatchesFiltered.length > 0 && (
+      {upcomingMatches.length > 0 && (
         <Section title="Upcoming" subtitle="Scheduled fixtures">
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {upcomingMatchesFiltered.map((m) => (
+            {upcomingMatches.map((m) => (
               <MatchCard key={m.id} {...m} />
             ))}
           </div>
@@ -173,11 +169,21 @@ function Hero({
   teamCount,
   playerCount,
   liveCount,
+  myLiveCount,
+  hasProfile,
 }: {
   teamCount: number;
   playerCount: number;
   liveCount: number;
+  myLiveCount: number;
+  hasProfile: boolean;
 }) {
+  // "Your matches" CTA links to the on-page anchor when the visitor has
+  // claimed a profile + is currently in a live match. Otherwise it scrolls
+  // to the regular live-matches section so the button always feels useful.
+  const yourMatchesHref =
+    hasProfile && myLiveCount > 0 ? "#your-matches" : "/matches";
+
   return (
     <div className="hitachi-hero relative overflow-hidden rounded-3xl px-6 py-12 text-white sm:px-12 sm:py-16">
       <div className="relative z-10 max-w-3xl">
@@ -206,10 +212,15 @@ function Hero({
             View matches
           </Link>
           <Link
-            href="/players"
+            href={yourMatchesHref}
             className="rounded-lg bg-white/10 px-5 py-3 text-sm font-semibold text-white ring-1 ring-white/20 hover:bg-white/15"
           >
-            Browse players
+            Your matches
+            {myLiveCount > 0 ? (
+              <span className="ml-2 inline-flex items-center rounded-full bg-hitachi-light/20 px-1.5 py-0.5 text-[10px] font-bold text-hitachi-light">
+                {myLiveCount} live
+              </span>
+            ) : null}
           </Link>
         </div>
       </div>
@@ -266,31 +277,53 @@ function Section({
 }) {
   return (
     <section>
-      <div className="mb-5 flex items-end justify-between gap-4">
-        <div>
-          <h2
-            className={
-              "text-2xl font-bold " +
-              (accent ? "text-hitachi" : "text-slate-900")
-            }
-          >
-            {title}
-          </h2>
-          {subtitle && (
-            <p className="text-sm text-slate-500">{subtitle}</p>
-          )}
-        </div>
-        {actionHref && actionLabel && (
-          <Link
-            href={actionHref}
-            className="text-sm font-semibold text-hitachi hover:underline"
-          >
-            {actionLabel} &rarr;
-          </Link>
-        )}
-      </div>
+      <SectionHeader
+        title={title}
+        subtitle={subtitle}
+        accent={accent}
+        actionHref={actionHref}
+        actionLabel={actionLabel}
+      />
       {children}
     </section>
+  );
+}
+
+function SectionHeader({
+  title,
+  subtitle,
+  actionHref,
+  actionLabel,
+  accent,
+}: {
+  title: string;
+  subtitle?: string;
+  actionHref?: string;
+  actionLabel?: string;
+  accent?: boolean;
+}) {
+  return (
+    <div className="mb-5 flex items-end justify-between gap-4">
+      <div>
+        <h2
+          className={
+            "text-2xl font-bold " +
+            (accent ? "text-hitachi" : "text-slate-900")
+          }
+        >
+          {title}
+        </h2>
+        {subtitle && <p className="text-sm text-slate-500">{subtitle}</p>}
+      </div>
+      {actionHref && actionLabel && (
+        <Link
+          href={actionHref}
+          className="text-sm font-semibold text-hitachi hover:underline"
+        >
+          {actionLabel} &rarr;
+        </Link>
+      )}
+    </div>
   );
 }
 

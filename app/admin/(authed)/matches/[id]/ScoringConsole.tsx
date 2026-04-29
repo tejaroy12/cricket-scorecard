@@ -878,10 +878,17 @@ function RecentBalls({ innings }: { innings: Innings }) {
   return (
     <div className="card p-5">
       <h3 className="mb-3 text-base font-bold text-slate-900">Last balls</h3>
-      <div className="flex flex-wrap gap-2">
-        {innings.balls.slice().reverse().map((b) => (
-          <BallChip key={b.id} ball={b} />
-        ))}
+      {/*
+       * Horizontal scroll on narrow screens so the user can swipe through
+       * the full list of recent balls without anything getting clipped on
+       * the right.
+       */}
+      <div className="-mx-2 overflow-x-auto px-2 pb-1">
+        <div className="flex w-max items-center gap-2">
+          {innings.balls.slice().reverse().map((b) => (
+            <BallChip key={b.id} ball={b} />
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -996,7 +1003,7 @@ function InningsScorecardBlock({ innings: i }: { innings: Innings }) {
               {i.battingEntries.map((b) => (
                 <tr key={b.id}>
                   <td className="py-1.5">
-                    {b.player.name}
+                    <PlayerLink id={b.player.id}>{b.player.name}</PlayerLink>
                     {!b.isOut && b.balls > 0 && <span className="text-slate-400">*</span>}
                   </td>
                   <td className="py-1.5 text-right tabular-nums font-medium">{b.runs}</td>
@@ -1024,7 +1031,9 @@ function InningsScorecardBlock({ innings: i }: { innings: Innings }) {
             <tbody className="divide-y divide-slate-100">
               {i.bowlingEntries.map((b) => (
                 <tr key={b.id}>
-                  <td className="py-1.5">{b.player.name}</td>
+                  <td className="py-1.5">
+                    <PlayerLink id={b.player.id}>{b.player.name}</PlayerLink>
+                  </td>
                   <td className="py-1.5 text-right tabular-nums">{b.oversText}</td>
                   <td className="py-1.5 text-right tabular-nums">{b.runsConceded}</td>
                   <td className="py-1.5 text-right tabular-nums font-medium">{b.wickets}</td>
@@ -1036,6 +1045,23 @@ function InningsScorecardBlock({ innings: i }: { innings: Innings }) {
         </div>
       </div>
     </div>
+  );
+}
+
+function PlayerLink({
+  id,
+  children,
+}: {
+  id: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <Link
+      href={`/players/${id}`}
+      className="font-medium text-slate-900 hover:text-hitachi hover:underline"
+    >
+      {children}
+    </Link>
   );
 }
 

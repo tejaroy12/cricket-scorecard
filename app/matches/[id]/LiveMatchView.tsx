@@ -225,8 +225,8 @@ function CurrentInningsView({ innings }: { innings: Innings }) {
               .filter(Boolean)
               .map((b) => (
                 <tr key={b!.id}>
-                  <td className="py-1.5 font-medium text-slate-900">
-                    {b!.player.name}
+                  <td className="py-1.5">
+                    <PlayerLink id={b!.player.id}>{b!.player.name}</PlayerLink>
                     {b!.isStriker && <span className="ml-1 text-hitachi">*</span>}
                   </td>
                   <td className="py-1.5 text-right font-bold tabular-nums">{b!.runs}</td>
@@ -243,7 +243,11 @@ function CurrentInningsView({ innings }: { innings: Innings }) {
         <h2 className="text-lg font-bold text-slate-900">Bowling</h2>
         {bowler ? (
           <div className="mt-3">
-            <div className="font-medium text-slate-900">{bowler.player.name}</div>
+            <div>
+              <PlayerLink id={bowler.player.id}>
+                {bowler.player.name}
+              </PlayerLink>
+            </div>
             <div className="mt-1 text-2xl font-black tabular-nums text-slate-900">
               {bowler.runsConceded}/{bowler.wickets}
             </div>
@@ -257,10 +261,12 @@ function CurrentInningsView({ innings }: { innings: Innings }) {
         {innings.balls.length > 0 && (
           <div className="mt-5">
             <div className="text-xs font-semibold uppercase tracking-widest text-slate-500">Last balls</div>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {innings.balls.slice().reverse().map((b) => (
-                <BallChip key={b.id} ball={b} />
-              ))}
+            <div className="-mx-2 mt-2 overflow-x-auto px-2 pb-1">
+              <div className="flex w-max items-center gap-2">
+                {innings.balls.slice().reverse().map((b) => (
+                  <BallChip key={b.id} ball={b} />
+                ))}
+              </div>
             </div>
           </div>
         )}
@@ -377,7 +383,7 @@ function InningsScorecardBlock({ innings: i }: { innings: Innings }) {
               {i.battingEntries.map((b) => (
                 <tr key={b.id}>
                   <td className="py-1.5">
-                    {b.player.name}
+                    <PlayerLink id={b.player.id}>{b.player.name}</PlayerLink>
                     {!b.isOut && b.balls > 0 && <span className="text-slate-400">*</span>}
                   </td>
                   <td className="py-1.5 text-right tabular-nums font-medium">{b.runs}</td>
@@ -405,7 +411,9 @@ function InningsScorecardBlock({ innings: i }: { innings: Innings }) {
             <tbody className="divide-y divide-slate-100">
               {i.bowlingEntries.map((b) => (
                 <tr key={b.id}>
-                  <td className="py-1.5">{b.player.name}</td>
+                  <td className="py-1.5">
+                    <PlayerLink id={b.player.id}>{b.player.name}</PlayerLink>
+                  </td>
                   <td className="py-1.5 text-right tabular-nums">{b.oversText}</td>
                   <td className="py-1.5 text-right tabular-nums">{b.runsConceded}</td>
                   <td className="py-1.5 text-right tabular-nums font-medium">{b.wickets}</td>
@@ -518,5 +526,22 @@ function AwardCard({
       <div className={`mt-2 text-2xl font-black tabular-nums ${statCls}`}>{stat}</div>
       <div className={`text-xs ${noteCls}`}>{note}</div>
     </div>
+  );
+}
+
+function PlayerLink({
+  id,
+  children,
+}: {
+  id: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <Link
+      href={`/players/${id}`}
+      className="font-medium text-slate-900 hover:text-hitachi hover:underline"
+    >
+      {children}
+    </Link>
   );
 }

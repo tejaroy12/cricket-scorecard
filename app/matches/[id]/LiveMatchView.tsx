@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { BoundaryCelebration } from "@/components/BoundaryCelebration";
 
 type Player = { id: string; name: string };
 type Team = { id: string; name: string; shortName: string };
@@ -14,6 +15,7 @@ type BattingEntry = {
   fours: number;
   sixes: number;
   isOut: boolean;
+  outDesc: string | null;
   isOnCrease: boolean;
   isStriker: boolean;
   strikeRate: number;
@@ -83,6 +85,11 @@ type MatchState = {
 export default function LiveMatchView({ initial }: { initial: MatchState }) {
   const [state, setState] = useState<MatchState>(initial);
   const isLive = state.status === "LIVE";
+  const [celebrate, setCelebrate] = useState<{
+    kind: "FOUR" | "SIX";
+    ts: number;
+  } | null>(null);
+  const lastSeenBallId = useRef<string | null>(null);
 
   const refresh = useCallback(async () => {
     const r = await fetch(`/api/matches/${state.id}/state`, { cache: "no-store" });
@@ -100,6 +107,22 @@ export default function LiveMatchView({ initial }: { initial: MatchState }) {
     [state.innings, state.currentInningsId],
   );
 
+  useEffect(() => {
+    if (!current) return;
+    const latest = current.balls[0];
+    if (!latest) {
+      lastSeenBallId.current = null;
+      return;
+    }
+    if (lastSeenBallId.current === latest.id) return;
+    const isInitial = lastSeenBallId.current === null;
+    lastSeenBallId.current = latest.id;
+    if (isInitial) return;
+    if (latest.isWicket) return;
+    if (latest.runs === 4) setCelebrate({ kind: "FOUR", ts: Date.now() });
+    else if (latest.runs === 6) setCelebrate({ kind: "SIX", ts: Date.now() });
+  }, [current]);
+
   const innings1 = state.innings.find((i) => i.inningsNumber === 1);
   const innings2 = state.innings.find((i) => i.inningsNumber === 2);
 
@@ -113,6 +136,11 @@ export default function LiveMatchView({ initial }: { initial: MatchState }) {
 
   return (
     <div className="space-y-6">
+      <BoundaryCelebration
+        kind={celebrate?.kind ?? null}
+        nonce={celebrate?.ts ?? 0}
+        onDone={() => setCelebrate(null)}
+      />
       <div className="card overflow-hidden">
         <div className="hitachi-hero px-6 py-6 text-white">
           <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-widest text-white/70">
@@ -383,8 +411,15 @@ function InningsScorecardBlock({ innings: i }: { innings: Innings }) {
               {i.battingEntries.map((b) => (
                 <tr key={b.id}>
                   <td className="py-1.5">
-                    <PlayerLink id={b.player.id}>{b.player.name}</PlayerLink>
-                    {!b.isOut && b.balls > 0 && <span className="text-slate-400">*</span>}
+                    <div>
+                      <PlayerLink id={b.player.id}>{b.player.name}</PlayerLink>
+                      {!b.isOut && b.balls > 0 && <span className="text-slate-400">*</span>}
+                    </div>
+                    {b.isOut && b.outDesc && (
+                      <div className="text-[11px] italic text-slate-500">
+                        {b.outDesc}
+                      </div>
+                    )}
                   </td>
                   <td className="py-1.5 text-right tabular-nums font-medium">{b.runs}</td>
                   <td className="py-1.5 text-right tabular-nums">{b.balls}</td>

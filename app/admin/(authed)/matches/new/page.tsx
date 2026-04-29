@@ -52,6 +52,12 @@ async function createMatchAction(
       error: "Each side needs at least 2 players.",
     };
   }
+  if (team1Roster.length !== team2Roster.length) {
+    return {
+      ok: false,
+      error: `Both sides must have the same number of players. Side 1 has ${team1Roster.length}, Side 2 has ${team2Roster.length}.`,
+    };
+  }
 
   const team1Ids = new Set(team1Roster.map((r) => r.playerId));
   const overlap = team2Roster.filter((r) => team1Ids.has(r.playerId));

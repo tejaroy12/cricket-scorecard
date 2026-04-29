@@ -22,6 +22,12 @@ export interface BallInput {
   wicketType: WicketType;
   dismissedPlayerId?: string | null;
   /**
+   * Supporting fielder when relevant (catcher, runner-out, stumper). This
+   * lets us render rich out descriptions on the scorecard like
+   * "c Sharma b Khan" or "run out (Sharma)".
+   */
+  fielderId?: string | null;
+  /**
    * If a wicket falls and a new batter must come in, the admin selects them.
    * For RUN_OUT this could be either striker or non-striker.
    */
@@ -96,6 +102,7 @@ export async function applyBall(input: BallInput) {
         isWicket: input.isWicket,
         wicketType: input.wicketType,
         dismissedPlayerId: input.dismissedPlayerId ?? null,
+        fielderId: input.fielderId ?? null,
         commentary: input.commentary ?? null,
       },
     });
@@ -179,7 +186,23 @@ export async function applyBall(input: BallInput) {
 
     // Wicket bookkeeping
     if (input.isWicket && input.dismissedPlayerId) {
-      const outDesc = buildOutDescription(input);
+      const involvedIds = [input.bowlerId];
+      if (input.fielderId) involvedIds.push(input.fielderId);
+      const involvedPlayers = await tx.player.findMany({
+        where: { id: { in: involvedIds } },
+        select: { id: true, name: true },
+      });
+      const nameById = new Map<string, string>(
+        involvedPlayers.map((p: any) => [p.id as string, p.name as string]),
+      );
+      const outDesc = buildOutDescription({
+        wicketType: input.wicketType,
+        bowlerName: nameById.get(input.bowlerId) ?? null,
+        fielderName: input.fielderId
+          ? nameById.get(input.fielderId) ?? null
+          : null,
+      });
+
       await tx.battingEntry.update({
         where: {
           inningsId_playerId: {
@@ -355,20 +378,35 @@ async function ensureBowlingEntry(
   });
 }
 
-function buildOutDescription(input: BallInput): string {
-  switch (input.wicketType) {
+/**
+ * Build a human-readable dismissal string like:
+ *   "b Khan", "c Sharma b Khan", "c & b Khan", "lbw b Khan",
+ *   "run out (Sharma)", "st Patel b Khan", "hit wicket b Khan"
+ */
+export function buildOutDescription({
+  wicketType,
+  bowlerName,
+  fielderName,
+}: {
+  wicketType: WicketType;
+  bowlerName?: string | null;
+  fielderName?: string | null;
+}): string {
+  const bowler = bowlerName?.trim() || "bowler";
+  const fielder = fielderName?.trim() || null;
+  switch (wicketType) {
     case "BOWLED":
-      return `b ${input.bowlerId}`; // resolved to name in UI by joining player
+      return `b ${bowler}`;
     case "CAUGHT":
-      return `c & b`;
+      return fielder ? `c ${fielder} b ${bowler}` : `c & b ${bowler}`;
     case "LBW":
-      return `lbw b`;
+      return `lbw b ${bowler}`;
     case "RUN_OUT":
-      return `run out`;
+      return fielder ? `run out (${fielder})` : "run out";
     case "STUMPED":
-      return `st b`;
+      return fielder ? `st ${fielder} b ${bowler}` : `st b ${bowler}`;
     case "HIT_WICKET":
-      return `hit wicket b`;
+      return `hit wicket b ${bowler}`;
     default:
       return "out";
   }
@@ -468,6 +506,20 @@ export async function recomputeInnings(tx: any, inningsId: string) {
     });
 
     if (b.isWicket && b.dismissedPlayerId) {
+      const involvedIds = [b.bowlerId];
+      if (b.fielderId) involvedIds.push(b.fielderId);
+      const involvedPlayers = await tx.player.findMany({
+        where: { id: { in: involvedIds } },
+        select: { id: true, name: true },
+      });
+      const nameById = new Map<string, string>(
+        involvedPlayers.map((p: any) => [p.id as string, p.name as string]),
+      );
+      const outDesc = buildOutDescription({
+        wicketType: b.wicketType as WicketType,
+        bowlerName: nameById.get(b.bowlerId) ?? null,
+        fielderName: b.fielderId ? nameById.get(b.fielderId) ?? null : null,
+      });
       await tx.battingEntry.update({
         where: {
           inningsId_playerId: {
@@ -475,7 +527,7 @@ export async function recomputeInnings(tx: any, inningsId: string) {
             playerId: b.dismissedPlayerId,
           },
         },
-        data: { isOut: true },
+        data: { isOut: true, outDesc },
       });
     }
   }

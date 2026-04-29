@@ -52,6 +52,7 @@ export async function POST(
       isWicket: Boolean(body.isWicket),
       wicketType: body.wicketType ?? null,
       dismissedPlayerId: body.dismissedPlayerId ?? null,
+      fielderId: body.fielderId ?? null,
       newBatterId: body.newBatterId ?? null,
       commentary: body.commentary ?? null,
     });

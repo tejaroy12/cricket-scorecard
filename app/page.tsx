@@ -90,10 +90,12 @@ export default async function HomePage() {
   return (
     <div className="space-y-12">
       {/*
-       * Live scores need to feel snappy; refresh every 4s while any LIVE
-       * match is on the page (whether it's in "Your matches" or "Live now").
+       * Live scores need to feel snappy: refresh every 4s while any LIVE
+       * match is on the page. When nothing is live we still refresh every
+       * 5 minutes so newly-scheduled / completed matches appear without a
+       * manual reload.
        */}
-      {hasLive && <AutoRefresher intervalMs={4000} />}
+      <AutoRefresher intervalMs={hasLive ? 4000 : 5 * 60 * 1000} />
 
       <Hero
         teamCount={teamCount}

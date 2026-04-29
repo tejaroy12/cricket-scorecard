@@ -1,10 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { RosterManager } from "./RosterManager";
 import { Spinner } from "@/components/Spinner";
+import { BoundaryCelebration } from "@/components/BoundaryCelebration";
 
 type Player = { id: string; name: string; jerseyNumber?: number | null; teamId?: string | null };
 type Team = { id: string; name: string; shortName: string; players: Player[] };
@@ -19,6 +20,7 @@ type BattingEntry = {
   fours: number;
   sixes: number;
   isOut: boolean;
+  outDesc: string | null;
   isOnCrease: boolean;
   isStriker: boolean;
   strikeRate: number;
@@ -118,6 +120,11 @@ export default function ScoringConsole({ initial }: { initial: MatchState }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [autoMessage, setAutoMessage] = useState<string | null>(null);
+  const [celebrate, setCelebrate] = useState<{
+    kind: "FOUR" | "SIX";
+    ts: number;
+  } | null>(null);
+  const lastSeenBallId = useRef<string | null>(null);
 
   const refresh = useCallback(async () => {
     const r = await fetch(`/api/matches/${state.id}/state`, { cache: "no-store" });
@@ -190,21 +197,57 @@ export default function ScoringConsole({ initial }: { initial: MatchState }) {
     return () => clearTimeout(t);
   }, [state, currentInnings, call]);
 
+  /*
+   * Detect a freshly recorded boundary (4 or 6) and trigger the
+   * full-screen celebration overlay. We only fire when the ball id at the
+   * head of the recent-balls list changes from one render to the next, so
+   * stable refreshes don't replay the animation.
+   */
+  useEffect(() => {
+    if (!currentInnings) return;
+    const latest = currentInnings.balls[0];
+    if (!latest) {
+      lastSeenBallId.current = null;
+      return;
+    }
+    if (lastSeenBallId.current === latest.id) return;
+    const isInitial = lastSeenBallId.current === null;
+    lastSeenBallId.current = latest.id;
+    if (isInitial) return;
+    if (latest.isWicket) return;
+    const offBat = latest.runs;
+    if (offBat === 4) setCelebrate({ kind: "FOUR", ts: Date.now() });
+    else if (offBat === 6) setCelebrate({ kind: "SIX", ts: Date.now() });
+  }, [currentInnings]);
+
   return (
     <div className="space-y-6">
+      <BoundaryCelebration
+        kind={celebrate?.kind ?? null}
+        nonce={celebrate?.ts ?? 0}
+        onDone={() => setCelebrate(null)}
+      />
       <Header state={state} />
 
       <div className="flex flex-wrap items-center gap-2">
-        <Link
-          href={`/admin/matches/${state.id}/edit`}
-          className="rounded-md px-3 py-1.5 text-xs font-medium text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50"
-        >
-          Edit match
-        </Link>
-        <span className="text-xs text-slate-400">
-          Wrong overs / teams / venue? Edit them above (teams lock once a ball
-          is bowled).
-        </span>
+        {state.status !== "COMPLETED" ? (
+          <>
+            <Link
+              href={`/admin/matches/${state.id}/edit`}
+              className="rounded-md px-3 py-1.5 text-xs font-medium text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50"
+            >
+              Edit match
+            </Link>
+            <span className="text-xs text-slate-400">
+              Wrong overs / teams / venue? Edit them above (teams lock once a
+              ball is bowled).
+            </span>
+          </>
+        ) : (
+          <span className="text-xs font-semibold uppercase tracking-widest text-emerald-700">
+            Match completed
+          </span>
+        )}
         {busy && (
           <span className="ml-auto inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700 ring-1 ring-amber-100">
             <Spinner size={12} />
@@ -243,6 +286,11 @@ export default function ScoringConsole({ initial }: { initial: MatchState }) {
             onSetBowler={(bowlerId) => call(`/api/innings/${currentInnings.id}/bowler`, { bowlerId })}
             onBall={(b) => call(`/api/innings/${currentInnings.id}/ball`, b)}
             onUndo={() => call(`/api/innings/${currentInnings.id}/undo`)}
+            onIncomingBatter={(playerId) =>
+              call(`/api/innings/${currentInnings.id}/incoming-batter`, {
+                playerId,
+              })
+            }
             onStartSecondInnings={() => call(`/api/matches/${state.id}/start-second-innings`)}
             onStartSuperOver={() => call(`/api/matches/${state.id}/super-over`)}
             onComplete={() =>
@@ -464,6 +512,7 @@ function ScoringPanel({
   onSetBowler,
   onBall,
   onUndo,
+  onIncomingBatter,
   onStartSecondInnings,
   onStartSuperOver,
   onComplete,
@@ -475,6 +524,7 @@ function ScoringPanel({
   onSetBowler: (bowlerId: string) => void;
   onBall: (b: any) => void;
   onUndo: () => void;
+  onIncomingBatter: (playerId: string) => void;
   onStartSecondInnings: () => void;
   onStartSuperOver: () => void;
   onComplete: () => void;
@@ -500,7 +550,23 @@ function ScoringPanel({
     effectiveMaxWickets > 0 && innings.totalWickets >= effectiveMaxWickets;
   const inningsOver = innings.isClosed || maxOversReached || allOut;
 
-  const needsOpeners = !inningsOver && onCrease.length < 2;
+  // Distinguish "fresh innings" (no balls yet, need both openers) from
+  // "wicket fell mid-innings" (only one batter slot empty). The latter gets
+  // a focused popup so the admin can't keep scoring without naming the
+  // incoming batter.
+  const noBatters = onCrease.length === 0;
+  const needsOpeners =
+    !inningsOver && noBatters && innings.totalBalls === 0;
+  const needsIncomingBatter =
+    !inningsOver && !needsOpeners && onCrease.length < 2;
+
+  const dismissedIds = innings.battingEntries
+    .filter((b) => b.isOut)
+    .map((b) => b.playerId);
+  const onCreaseIds = onCrease.map((b) => b.playerId);
+  const incomingCandidates = battingTeamPlayers.filter(
+    (p) => !dismissedIds.includes(p.id) && !onCreaseIds.includes(p.id),
+  );
 
   const isFirstInnings = innings.inningsNumber === 1;
   const isSuperOver = innings.isSuperOver || innings.inningsNumber >= 3;
@@ -534,6 +600,13 @@ function ScoringPanel({
           busy={busy}
           onSubmit={onSetOpeners}
         />
+      ) : needsIncomingBatter ? (
+        <NextBatterDialog
+          candidates={incomingCandidates}
+          stillOnCrease={onCrease.map((b) => b.player)}
+          busy={busy}
+          onSubmit={onIncomingBatter}
+        />
       ) : (
         <>
           <BowlerSwitcher
@@ -549,6 +622,7 @@ function ScoringPanel({
               nonStriker={nonStriker?.player}
               bowler={currentBowler?.player}
               battingTeamPlayers={battingTeamPlayers}
+              bowlingTeamPlayers={bowlingTeamPlayers}
               dismissedPlayerIds={innings.battingEntries
                 .filter((b) => b.isOut)
                 .map((b) => b.playerId)}
@@ -691,6 +765,7 @@ function BallEntry({
   nonStriker,
   bowler,
   battingTeamPlayers,
+  bowlingTeamPlayers,
   dismissedPlayerIds,
   busy,
   onBall,
@@ -700,6 +775,7 @@ function BallEntry({
   nonStriker?: Player;
   bowler?: Player;
   battingTeamPlayers: Player[];
+  bowlingTeamPlayers: Player[];
   dismissedPlayerIds: string[];
   busy: boolean;
   onBall: (b: any) => void;
@@ -710,7 +786,9 @@ function BallEntry({
   const [showWicket, setShowWicket] = useState(false);
   const [wicketType, setWicketType] = useState<string>("BOWLED");
   const [dismissedPlayerId, setDismissedPlayerId] = useState<string>("");
+  const [fielderId, setFielderId] = useState<string>("");
   const [newBatterId, setNewBatterId] = useState<string>("");
+  const [warning, setWarning] = useState<string | null>(null);
 
   function reset() {
     setExtraType("");
@@ -718,14 +796,45 @@ function BallEntry({
     setShowWicket(false);
     setWicketType("BOWLED");
     setDismissedPlayerId("");
+    setFielderId("");
     setNewBatterId("");
+    setWarning(null);
   }
+
+  // Available new batters = batting team minus the two currently on crease
+  // minus anyone who has already been dismissed in this innings.
+  const dismissed = new Set(dismissedPlayerIds);
+  const availableNewBatters = battingTeamPlayers.filter(
+    (p) =>
+      p.id !== striker?.id &&
+      p.id !== nonStriker?.id &&
+      !dismissed.has(p.id),
+  );
 
   function submit(runs: number) {
     const isWicket = showWicket;
     const dismissed = isWicket
       ? dismissedPlayerId || (striker?.id ?? "")
       : null;
+
+    if (isWicket && availableNewBatters.length > 0 && !newBatterId) {
+      setWarning(
+        "Pick the next batter before submitting this wicket — the dismissed batter cannot bat again.",
+      );
+      return;
+    }
+    if (
+      isWicket &&
+      (wicketType === "CAUGHT" ||
+        wicketType === "RUN_OUT" ||
+        wicketType === "STUMPED") &&
+      !fielderId
+    ) {
+      setWarning(
+        "Pick the fielder (catcher / runner-out / keeper) so the scorecard reads correctly.",
+      );
+      return;
+    }
 
     onBall({
       runs,
@@ -734,20 +843,11 @@ function BallEntry({
       isWicket,
       wicketType: isWicket ? wicketType : null,
       dismissedPlayerId: dismissed || null,
+      fielderId: isWicket && fielderId ? fielderId : null,
       newBatterId: isWicket ? newBatterId || null : null,
     });
     reset();
   }
-
-  // Available new batters = batting team minus the two on crease and minus
-  // anyone who has already been dismissed in this innings.
-  const dismissed = new Set(dismissedPlayerIds);
-  const availableNewBatters = battingTeamPlayers.filter(
-    (p) =>
-      p.id !== striker?.id &&
-      p.id !== nonStriker?.id &&
-      !dismissed.has(p.id),
-  );
 
   return (
     <div>
@@ -827,38 +927,86 @@ function BallEntry({
           <input
             type="checkbox"
             checked={showWicket}
-            onChange={(e) => setShowWicket(e.target.checked)}
+            onChange={(e) => {
+              setShowWicket(e.target.checked);
+              if (!e.target.checked) setWarning(null);
+            }}
           />
           Wicket on this ball
         </label>
         {showWicket && (
-          <div className="mt-3 grid gap-3 sm:grid-cols-3">
-            <div>
-              <label className="label">Type</label>
-              <select className="input" value={wicketType} onChange={(e) => setWicketType(e.target.value)}>
-                <option value="BOWLED">Bowled</option>
-                <option value="CAUGHT">Caught</option>
-                <option value="LBW">LBW</option>
-                <option value="RUN_OUT">Run out</option>
-                <option value="STUMPED">Stumped</option>
-                <option value="HIT_WICKET">Hit wicket</option>
-              </select>
+          <>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div>
+                <label className="label">Type</label>
+                <select className="input" value={wicketType} onChange={(e) => setWicketType(e.target.value)}>
+                  <option value="BOWLED">Bowled</option>
+                  <option value="CAUGHT">Caught</option>
+                  <option value="LBW">LBW</option>
+                  <option value="RUN_OUT">Run out</option>
+                  <option value="STUMPED">Stumped</option>
+                  <option value="HIT_WICKET">Hit wicket</option>
+                </select>
+              </div>
+              <div>
+                <label className="label">Dismissed batter</label>
+                <select className="input" value={dismissedPlayerId} onChange={(e) => setDismissedPlayerId(e.target.value)}>
+                  <option value="">{striker?.name ? `Striker: ${striker.name}` : "Striker"}</option>
+                  {nonStriker && <option value={nonStriker.id}>Non-striker: {nonStriker.name}</option>}
+                </select>
+              </div>
+              {(wicketType === "CAUGHT" ||
+                wicketType === "RUN_OUT" ||
+                wicketType === "STUMPED") && (
+                <div>
+                  <label className="label">
+                    {wicketType === "CAUGHT"
+                      ? "Caught by"
+                      : wicketType === "STUMPED"
+                      ? "Stumped by"
+                      : "Run out by"}
+                  </label>
+                  <select
+                    className="input"
+                    value={fielderId}
+                    onChange={(e) => setFielderId(e.target.value)}
+                  >
+                    <option value="">Select fielder…</option>
+                    {bowlingTeamPlayers.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              <div>
+                <label className="label">
+                  New batter
+                  {availableNewBatters.length > 0 && (
+                    <span className="ml-0.5 text-red-500">*</span>
+                  )}
+                </label>
+                <select className="input" value={newBatterId} onChange={(e) => setNewBatterId(e.target.value)}>
+                  <option value="">
+                    {availableNewBatters.length === 0
+                      ? "No batters left (all out)"
+                      : "Select next batter…"}
+                  </option>
+                  {availableNewBatters.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
-            <div>
-              <label className="label">Dismissed batter</label>
-              <select className="input" value={dismissedPlayerId} onChange={(e) => setDismissedPlayerId(e.target.value)}>
-                <option value="">{striker?.name ? `Striker: ${striker.name}` : "Striker"}</option>
-                {nonStriker && <option value={nonStriker.id}>Non-striker: {nonStriker.name}</option>}
-              </select>
-            </div>
-            <div>
-              <label className="label">New batter</label>
-              <select className="input" value={newBatterId} onChange={(e) => setNewBatterId(e.target.value)}>
-                <option value="">Select…</option>
-                {availableNewBatters.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </select>
-            </div>
-          </div>
+            {warning && (
+              <div className="mt-3 rounded-md bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800 ring-1 ring-amber-100">
+                {warning}
+              </div>
+            )}
+          </>
         )}
       </div>
 
@@ -1003,8 +1151,15 @@ function InningsScorecardBlock({ innings: i }: { innings: Innings }) {
               {i.battingEntries.map((b) => (
                 <tr key={b.id}>
                   <td className="py-1.5">
-                    <PlayerLink id={b.player.id}>{b.player.name}</PlayerLink>
-                    {!b.isOut && b.balls > 0 && <span className="text-slate-400">*</span>}
+                    <div>
+                      <PlayerLink id={b.player.id}>{b.player.name}</PlayerLink>
+                      {!b.isOut && b.balls > 0 && <span className="text-slate-400">*</span>}
+                    </div>
+                    {b.isOut && b.outDesc && (
+                      <div className="text-[11px] italic text-slate-500">
+                        {b.outDesc}
+                      </div>
+                    )}
                   </td>
                   <td className="py-1.5 text-right tabular-nums font-medium">{b.runs}</td>
                   <td className="py-1.5 text-right tabular-nums">{b.balls}</td>
@@ -1161,6 +1316,80 @@ function AwardCard({
       <div className={`text-xs ${noteCls}`}>{team}</div>
       <div className={`mt-2 text-2xl font-black tabular-nums ${statCls}`}>{stat}</div>
       <div className={`text-xs ${noteCls}`}>{note}</div>
+    </div>
+  );
+}
+
+/**
+ * Modal-style "next batter required" prompt rendered when a wicket has
+ * fallen but the admin hasn't yet named the incoming batter. Scoring is
+ * impossible until they do.
+ */
+function NextBatterDialog({
+  candidates,
+  stillOnCrease,
+  busy,
+  onSubmit,
+}: {
+  candidates: Player[];
+  stillOnCrease: Player[];
+  busy: boolean;
+  onSubmit: (playerId: string) => void;
+}) {
+  const [pick, setPick] = useState<string>("");
+
+  if (candidates.length === 0) {
+    return (
+      <div className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800 ring-1 ring-amber-100">
+        No batters left in the dugout — innings should auto-close on the
+        next refresh.
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-xl bg-amber-50 p-5 ring-1 ring-amber-200">
+      <div className="flex items-center gap-2">
+        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-amber-200 text-amber-900">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 9v4" /><path d="M12 17h.01" />
+            <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" />
+          </svg>
+        </span>
+        <div>
+          <div className="text-base font-bold text-amber-900">
+            Wicket fell — choose the next batter
+          </div>
+          <div className="text-xs text-amber-800">
+            Still on crease:{" "}
+            {stillOnCrease.map((p) => p.name).join(", ") || "—"}. The
+            dismissed batter cannot bat again.
+          </div>
+        </div>
+      </div>
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        <select
+          className="input flex-1 min-w-[200px]"
+          value={pick}
+          onChange={(e) => setPick(e.target.value)}
+        >
+          <option value="">Select next batter…</option>
+          {candidates.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+              {p.jerseyNumber != null ? ` · #${p.jerseyNumber}` : ""}
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          disabled={!pick || busy}
+          onClick={() => onSubmit(pick)}
+          className="btn-primary"
+        >
+          {busy ? <Spinner label="Sending in…" /> : "Send batter in"}
+        </button>
+      </div>
     </div>
   );
 }

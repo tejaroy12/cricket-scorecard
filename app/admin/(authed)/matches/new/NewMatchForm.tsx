@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { Spinner } from "@/components/Spinner";
-import { LineupPicker, RolesMap } from "../LineupPicker";
+import { LineupPicker, RolesMap, RolesEditor } from "../LineupPicker";
 
 type Team = { id: string; name: string };
 type Player = {
@@ -127,6 +127,12 @@ export function NewMatchForm({
       setError("Each side needs at least 2 players to bat & bowl.");
       return;
     }
+    if (team1PlayerIds.length !== team2PlayerIds.length) {
+      setError(
+        `Both sides must have the same number of players. Side 1 has ${team1PlayerIds.length}, Side 2 has ${team2PlayerIds.length}.`,
+      );
+      return;
+    }
 
     startTransition(async () => {
       const res = await createMatchAction({
@@ -247,6 +253,45 @@ export function NewMatchForm({
           onRolesChange={setTeam2Roles}
         />
       </div>
+
+      {(team1PlayerIds.length > 0 || team2PlayerIds.length > 0) && (
+        <div className="card space-y-5 p-5">
+          <div>
+            <h3 className="text-base font-bold text-slate-900">
+              Captain, Vice-Captain & Wicket-Keeper
+            </h3>
+            <p className="text-xs text-slate-500">
+              Now that both lineups are set, tag the leadership roles for
+              each side. C and VC must be different players on the same
+              side.
+            </p>
+          </div>
+          <div className="grid gap-4 lg:grid-cols-2">
+            <RolesEditor
+              title={
+                team1Id
+                  ? teams.find((t) => t.id === team1Id)?.name ?? "Team 1"
+                  : "Team 1"
+              }
+              players={players}
+              selectedIds={team1PlayerIds}
+              roles={team1Roles}
+              onRolesChange={setTeam1Roles}
+            />
+            <RolesEditor
+              title={
+                team2Id
+                  ? teams.find((t) => t.id === team2Id)?.name ?? "Team 2"
+                  : "Team 2"
+              }
+              players={players}
+              selectedIds={team2PlayerIds}
+              roles={team2Roles}
+              onRolesChange={setTeam2Roles}
+            />
+          </div>
+        </div>
+      )}
 
       {error && (
         <div className="rounded-md bg-red-50 px-4 py-3 text-sm text-red-700 ring-1 ring-red-100">

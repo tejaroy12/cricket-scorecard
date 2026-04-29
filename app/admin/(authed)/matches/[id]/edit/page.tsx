@@ -102,6 +102,17 @@ async function updateMatchAction(
   if (overlap.length > 0) {
     return { ok: false, error: "A player can't be on both sides." };
   }
+  // Both sides should still have the same headcount even after edits.
+  if (
+    team1Roster.length > 0 &&
+    team2Roster.length > 0 &&
+    team1Roster.length !== team2Roster.length
+  ) {
+    return {
+      ok: false,
+      error: `Both sides must have the same number of players. Side 1 has ${team1Roster.length}, Side 2 has ${team2Roster.length}.`,
+    };
+  }
 
   const overs = Number.isFinite(input.oversPerSide) ? input.oversPerSide : 20;
   const matchDate = input.matchDate ? new Date(input.matchDate) : match.matchDate;

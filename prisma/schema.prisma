@@ -50,6 +50,7 @@ model Player {
   ballsAsNonStriker Ball[]  @relation("NonStriker")
   ballsAsBowler    Ball[]   @relation("Bowler")
   dismissals       Ball[]   @relation("DismissedPlayer")
+  catchesAndRunouts Ball[]  @relation("Fielder")
   matchAppearances MatchPlayer[]
 
   @@index([teamId])
@@ -156,6 +157,10 @@ model Ball {
   wicketType   String?  // BOWLED, CAUGHT, LBW, RUN_OUT, STUMPED, HIT_WICKET
   dismissedPlayerId String?
   dismissedPlayer  Player? @relation("DismissedPlayer", fields: [dismissedPlayerId], references: [id])
+  // Optional supporting fielder for catches, run-outs, and stumpings. Used
+  // to render scorecard outs like "c Sharma b Khan" or "run out (Sharma)".
+  fielderId    String?
+  fielder      Player?  @relation("Fielder", fields: [fielderId], references: [id])
 
   commentary   String?
   createdAt    DateTime @default(now())

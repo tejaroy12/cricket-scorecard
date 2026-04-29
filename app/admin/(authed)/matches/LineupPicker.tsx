@@ -256,3 +256,138 @@ function RolePill({
     </button>
   );
 }
+
+/**
+ * Standalone "set captain / VC / WK" editor used as a second step under the
+ * lineup picker. Lists only the already-selected players for one side.
+ */
+export function RolesEditor({
+  title,
+  players,
+  selectedIds,
+  roles,
+  onRolesChange,
+}: {
+  title: string;
+  players: Player[];
+  selectedIds: string[];
+  roles: RolesMap;
+  onRolesChange: (next: RolesMap) => void;
+}) {
+  const playersById = useMemo(
+    () => new Map(players.map((p) => [p.id, p] as const)),
+    [players],
+  );
+  const picked = selectedIds
+    .map((id) => playersById.get(id))
+    .filter((p): p is Player => !!p);
+
+  function setRole(
+    playerId: string,
+    key: "isCaptain" | "isViceCaptain" | "isWicketKeeper",
+  ) {
+    const cur = roles[playerId] ?? {};
+    const next: RolesMap = { ...roles };
+    const turningOn = !cur[key];
+    if (turningOn) {
+      if (key === "isCaptain" || key === "isViceCaptain") {
+        for (const id of Object.keys(next)) {
+          if (id !== playerId && next[id]?.[key]) {
+            next[id] = { ...next[id], [key]: false };
+          }
+        }
+      }
+      const updated: RolesMap[string] = { ...cur, [key]: true };
+      if (key === "isCaptain") updated.isViceCaptain = false;
+      if (key === "isViceCaptain") updated.isCaptain = false;
+      next[playerId] = updated;
+    } else {
+      next[playerId] = { ...cur, [key]: false };
+    }
+    onRolesChange(next);
+  }
+
+  const captain = picked.find((p) => roles[p.id]?.isCaptain) ?? null;
+  const vc = picked.find((p) => roles[p.id]?.isViceCaptain) ?? null;
+  const wk = picked.find((p) => roles[p.id]?.isWicketKeeper) ?? null;
+
+  return (
+    <div className="rounded-xl bg-white p-4 ring-1 ring-slate-100">
+      <div className="flex items-center justify-between">
+        <h4 className="text-sm font-bold text-slate-900">{title}</h4>
+        <span className="rounded-full bg-hitachi/10 px-2.5 py-0.5 text-xs font-bold text-hitachi">
+          {picked.length}
+        </span>
+      </div>
+      <div className="mt-2 grid grid-cols-3 gap-2 text-[11px] font-semibold uppercase tracking-widest text-slate-500">
+        <div>
+          Captain
+          <div className="mt-0.5 truncate text-xs font-medium normal-case tracking-normal text-slate-900">
+            {captain?.name ?? "—"}
+          </div>
+        </div>
+        <div>
+          Vice
+          <div className="mt-0.5 truncate text-xs font-medium normal-case tracking-normal text-slate-900">
+            {vc?.name ?? "—"}
+          </div>
+        </div>
+        <div>
+          Keeper
+          <div className="mt-0.5 truncate text-xs font-medium normal-case tracking-normal text-slate-900">
+            {wk?.name ?? "—"}
+          </div>
+        </div>
+      </div>
+      {picked.length === 0 ? (
+        <div className="mt-3 text-xs italic text-slate-400">
+          Pick the lineup above first.
+        </div>
+      ) : (
+        <ul className="mt-3 max-h-[15rem] divide-y divide-slate-100 overflow-y-auto">
+          {picked.map((p) => {
+            const r = roles[p.id] ?? {};
+            return (
+              <li
+                key={p.id}
+                className="flex items-center gap-2 py-1.5 text-sm"
+              >
+                <div className="min-w-0 flex-1 truncate text-slate-900">
+                  {p.name}
+                  {p.jerseyNumber != null && (
+                    <span className="ml-1 text-xs text-slate-400">
+                      #{p.jerseyNumber}
+                    </span>
+                  )}
+                </div>
+                <div className="flex shrink-0 items-center gap-1">
+                  <RolePill
+                    active={!!r.isCaptain}
+                    title="Captain"
+                    onClick={() => setRole(p.id, "isCaptain")}
+                  >
+                    C
+                  </RolePill>
+                  <RolePill
+                    active={!!r.isViceCaptain}
+                    title="Vice-Captain"
+                    onClick={() => setRole(p.id, "isViceCaptain")}
+                  >
+                    VC
+                  </RolePill>
+                  <RolePill
+                    active={!!r.isWicketKeeper}
+                    title="Wicket-Keeper"
+                    onClick={() => setRole(p.id, "isWicketKeeper")}
+                  >
+                    WK
+                  </RolePill>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}

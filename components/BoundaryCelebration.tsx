@@ -2,10 +2,12 @@
 
 import { useEffect, useState } from "react";
 
-type Kind = "FOUR" | "SIX";
+type Kind = "FOUR" | "SIX" | "WICKET";
 
 /**
- * Full-screen celebration shown when a 4 or a 6 is scored.
+ * Full-screen overlay shown for the three "moments" the room reacts to:
+ * a four, a six, or a wicket. Same animation pipeline for all three so
+ * the admin/spectator gets a uniform punch every time.
  *
  * The parent passes `kind` along with a monotonically-increasing `nonce`
  * (typically a timestamp) — we use the nonce to retrigger the animation
@@ -45,16 +47,28 @@ export function BoundaryCelebration({
 
   if (!active) return null;
 
-  const isSix = active === "SIX";
-  const word = isSix ? "SIX!" : "FOUR!";
-  const tagline = isSix
-    ? "Maximum! Out of the park."
-    : "Boundary! Smashed to the rope.";
-  const gradient = isSix
-    ? "from-fuchsia-500 via-rose-500 to-amber-400"
-    : "from-emerald-400 via-sky-400 to-indigo-400";
-  const shadow = isSix ? "shadow-[0_0_120px_rgba(244,63,94,0.55)]" : "shadow-[0_0_120px_rgba(16,185,129,0.45)]";
-  const emoji = isSix ? "💥🎉🏏" : "🏏🎉";
+  const word =
+    active === "SIX" ? "SIX!" : active === "FOUR" ? "FOUR!" : "OUT!";
+  const tagline =
+    active === "SIX"
+      ? "Maximum! Out of the park."
+      : active === "FOUR"
+      ? "Boundary! Smashed to the rope."
+      : "Wicket! What a delivery.";
+  const gradient =
+    active === "SIX"
+      ? "from-fuchsia-500 via-rose-500 to-amber-400"
+      : active === "FOUR"
+      ? "from-emerald-400 via-sky-400 to-indigo-400"
+      : "from-rose-600 via-red-500 to-orange-500";
+  const shadow =
+    active === "SIX"
+      ? "shadow-[0_0_120px_rgba(244,63,94,0.55)]"
+      : active === "FOUR"
+      ? "shadow-[0_0_120px_rgba(16,185,129,0.45)]"
+      : "shadow-[0_0_140px_rgba(239,68,68,0.6)]";
+  const emoji =
+    active === "SIX" ? "💥🎉🏏" : active === "FOUR" ? "🏏🎉" : "🎯😱🏏";
 
   return (
     <div
@@ -102,9 +116,12 @@ export function BoundaryCelebration({
           const angle = (i / 18) * Math.PI * 2;
           const x = Math.cos(angle) * 38;
           const y = Math.sin(angle) * 38;
-          const colour = isSix
-            ? ["#f43f5e", "#fb923c", "#f59e0b", "#a855f7"][i % 4]
-            : ["#10b981", "#06b6d4", "#6366f1", "#84cc16"][i % 4];
+          const colour =
+            active === "SIX"
+              ? ["#f43f5e", "#fb923c", "#f59e0b", "#a855f7"][i % 4]
+              : active === "FOUR"
+              ? ["#10b981", "#06b6d4", "#6366f1", "#84cc16"][i % 4]
+              : ["#ef4444", "#dc2626", "#f97316", "#facc15"][i % 4];
           return (
             <span
               key={i}

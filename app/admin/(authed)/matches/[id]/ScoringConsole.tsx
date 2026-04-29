@@ -6,6 +6,7 @@ import Link from "next/link";
 import { RosterManager } from "./RosterManager";
 import { Spinner } from "@/components/Spinner";
 import { BoundaryCelebration } from "@/components/BoundaryCelebration";
+import { MatchPredictor } from "@/components/MatchPredictor";
 
 type Player = { id: string; name: string; jerseyNumber?: number | null; teamId?: string | null };
 type Team = { id: string; name: string; shortName: string; players: Player[] };
@@ -101,6 +102,42 @@ type MatchState = {
   matchPlayers?: MatchPlayer[];
 };
 
+// Wraps the predictor panel so we can compute the right inputs from
+// match state without bloating the main render block.
+function PredictorBlock({
+  state,
+  innings,
+}: {
+  state: MatchState;
+  innings: Innings;
+}) {
+  const i1 = state.innings.find((i) => i.inningsNumber === 1);
+  const isFirstInnings = innings.inningsNumber === 1;
+  const target = !isFirstInnings && i1 ? i1.totalRuns + 1 : null;
+  const rosterSize = getRosterForTeam(state, innings.battingTeamId).length;
+  const totalWickets = innings.maxWickets ??
+    Math.min(10, Math.max(1, rosterSize - 1));
+  return (
+    <MatchPredictor
+      battingTeamName={
+        innings.battingTeam.shortName || innings.battingTeam.name
+      }
+      bowlingTeamName={
+        innings.bowlingTeam.shortName || innings.bowlingTeam.name
+      }
+      input={{
+        battingRuns: innings.totalRuns,
+        battingWickets: innings.totalWickets,
+        battingBalls: innings.totalBalls,
+        oversPerSide: innings.maxOvers ?? state.oversPerSide,
+        totalWickets,
+        target,
+        isFirstInnings,
+      }}
+    />
+  );
+}
+
 // Returns the lineup for a given side (1 or 2). Prefers per-match roster
 // (MatchPlayer) when present; falls back to the legacy team.players list so
 // matches created before the roster picker still work.
@@ -122,7 +159,7 @@ export default function ScoringConsole({ initial }: { initial: MatchState }) {
   const [error, setError] = useState<string | null>(null);
   const [autoMessage, setAutoMessage] = useState<string | null>(null);
   const [celebrate, setCelebrate] = useState<{
-    kind: "FOUR" | "SIX";
+    kind: "FOUR" | "SIX" | "WICKET";
     ts: number;
   } | null>(null);
   const lastSeenBallId = useRef<string | null>(null);
@@ -215,7 +252,10 @@ export default function ScoringConsole({ initial }: { initial: MatchState }) {
     const isInitial = lastSeenBallId.current === null;
     lastSeenBallId.current = latest.id;
     if (isInitial) return;
-    if (latest.isWicket) return;
+    if (latest.isWicket) {
+      setCelebrate({ kind: "WICKET", ts: Date.now() });
+      return;
+    }
     const offBat = latest.runs;
     if (offBat === 4) setCelebrate({ kind: "FOUR", ts: Date.now() });
     else if (offBat === 6) setCelebrate({ kind: "SIX", ts: Date.now() });
@@ -278,6 +318,7 @@ export default function ScoringConsole({ initial }: { initial: MatchState }) {
       {state.status === "LIVE" && currentInnings && (
         <>
           <InningsScorecard innings={currentInnings} />
+          <PredictorBlock state={state} innings={currentInnings} />
           <ScoringPanel
             key={currentInnings.id}
             state={state}
@@ -530,6 +571,7 @@ function ScoringPanel({
   onStartSuperOver: () => void;
   onComplete: () => void;
 }) {
+  const [confirmComplete, setConfirmComplete] = useState(false);
   const battingTeamPlayers = getRosterForTeam(state, innings.battingTeamId);
   const bowlingTeamPlayers = getRosterForTeam(state, innings.bowlingTeamId);
 
@@ -620,6 +662,39 @@ function ScoringPanel({
   const canStartSuperOver2 =
     !!innings3 && innings3.isClosed && !innings4;
 
+  // Decide whether the match is naturally finished — if not, confirm
+  // before forcing completion.
+  const naturalCompletionReason = (() => {
+    const i1 = innings1;
+    const i2 = innings2;
+    if (!i1 || !i2) {
+      return i1
+        ? "Second innings hasn't started yet."
+        : "First innings hasn't started yet.";
+    }
+    if (i2.isClosed) {
+      // Either chase complete, all out, or overs finished.
+      return null;
+    }
+    if (i2.totalRuns > i1.totalRuns) return null;
+    const reasons: string[] = [];
+    const targetRunsLeft = i1.totalRuns + 1 - i2.totalRuns;
+    const ballsRemaining = state.oversPerSide * 6 - i2.totalBalls;
+    if (ballsRemaining > 0)
+      reasons.push(
+        `${Math.floor(ballsRemaining / 6)}.${ballsRemaining % 6} overs still to bowl`,
+      );
+    const wktsLeft = Math.max(
+      1,
+      getRosterForTeam(state, i2.battingTeamId).length - 1,
+    ) - i2.totalWickets;
+    if (wktsLeft > 0)
+      reasons.push(`${wktsLeft} wicket${wktsLeft === 1 ? "" : "s"} in hand`);
+    if (targetRunsLeft > 0)
+      reasons.push(`${targetRunsLeft} runs still needed to win`);
+    return reasons.length === 0 ? null : reasons.join(", ");
+  })();
+
   return (
     <div className="card space-y-5 p-5">
       {isSuperOver && (
@@ -705,13 +780,28 @@ function ScoringPanel({
             )}
             <button
               disabled={busy}
-              onClick={onComplete}
+              onClick={() => {
+                if (naturalCompletionReason) setConfirmComplete(true);
+                else onComplete();
+              }}
               className="btn-primary"
             >
               Complete match
             </button>
           </div>
         </>
+      )}
+
+      {confirmComplete && (
+        <ConfirmCompleteDialog
+          reason={naturalCompletionReason ?? ""}
+          busy={busy}
+          onCancel={() => setConfirmComplete(false)}
+          onConfirm={() => {
+            setConfirmComplete(false);
+            onComplete();
+          }}
+        />
       )}
     </div>
   );
@@ -1450,6 +1540,76 @@ function AwardCard({
       <div className={`text-xs ${noteCls}`}>{team}</div>
       <div className={`mt-2 text-2xl font-black tabular-nums ${statCls}`}>{stat}</div>
       <div className={`text-xs ${noteCls}`}>{note}</div>
+    </div>
+  );
+}
+
+/**
+ * Modal shown when the admin clicks "Complete match" but the match
+ * isn't naturally finished yet (overs still left, wickets in hand, or
+ * the chase still in progress). Forces an explicit confirmation.
+ */
+function ConfirmCompleteDialog({
+  reason,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  reason: string;
+  busy: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      className="fixed inset-0 z-[55] flex items-center justify-center bg-slate-950/60 backdrop-blur-sm p-4"
+    >
+      <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl ring-1 ring-slate-200">
+        <div className="flex items-start gap-3">
+          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 9v4" /><path d="M12 17h.01" />
+              <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" />
+            </svg>
+          </span>
+          <div className="flex-1">
+            <h3 className="text-lg font-bold text-slate-900">
+              End this match early?
+            </h3>
+            <p className="mt-1 text-sm text-slate-600">
+              The match isn't naturally finished yet:
+            </p>
+            <p className="mt-1 text-sm font-semibold text-slate-900">
+              {reason}.
+            </p>
+            <p className="mt-2 text-xs text-slate-500">
+              Completing now will lock the result based on the current score.
+              You'll still be able to undo individual balls, but you can't
+              re-open a completed match.
+            </p>
+          </div>
+        </div>
+        <div className="mt-5 flex flex-wrap justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={busy}
+            className="btn-ghost"
+          >
+            Keep playing
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={busy}
+            className="btn-primary"
+          >
+            {busy ? <Spinner label="Completing…" /> : "Yes, end the match"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

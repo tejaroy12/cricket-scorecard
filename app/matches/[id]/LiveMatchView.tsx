@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { BoundaryCelebration } from "@/components/BoundaryCelebration";
+import { MatchPredictor } from "@/components/MatchPredictor";
 
 type Player = { id: string; name: string };
 type Team = { id: string; name: string; shortName: string };
@@ -53,6 +54,8 @@ type Innings = {
   bowlingEntries: BowlingEntry[];
   balls: Ball[];
   isClosed: boolean;
+  maxOvers?: number | null;
+  maxWickets?: number | null;
 };
 type Award = {
   playerId: string;
@@ -66,6 +69,7 @@ type MatchAwards = {
   bestBowler: Award | null;
   manOfTheMatch: (Award & { score: number }) | null;
 };
+type MatchPlayer = { id: string; side: number; playerId: string };
 type MatchState = {
   id: string;
   status: string;
@@ -80,13 +84,14 @@ type MatchState = {
   currentInningsId: string | null;
   resultText: string | null;
   awards?: MatchAwards;
+  matchPlayers?: MatchPlayer[];
 };
 
 export default function LiveMatchView({ initial }: { initial: MatchState }) {
   const [state, setState] = useState<MatchState>(initial);
   const isLive = state.status === "LIVE";
   const [celebrate, setCelebrate] = useState<{
-    kind: "FOUR" | "SIX";
+    kind: "FOUR" | "SIX" | "WICKET";
     ts: number;
   } | null>(null);
   const lastSeenBallId = useRef<string | null>(null);
@@ -118,7 +123,10 @@ export default function LiveMatchView({ initial }: { initial: MatchState }) {
     const isInitial = lastSeenBallId.current === null;
     lastSeenBallId.current = latest.id;
     if (isInitial) return;
-    if (latest.isWicket) return;
+    if (latest.isWicket) {
+      setCelebrate({ kind: "WICKET", ts: Date.now() });
+      return;
+    }
     if (latest.runs === 4) setCelebrate({ kind: "FOUR", ts: Date.now() });
     else if (latest.runs === 6) setCelebrate({ kind: "SIX", ts: Date.now() });
   }, [current]);
@@ -190,7 +198,10 @@ export default function LiveMatchView({ initial }: { initial: MatchState }) {
       </div>
 
       {current && state.status === "LIVE" && (
-        <CurrentInningsView innings={current} />
+        <>
+          <PublicPredictorBlock state={state} innings={current} />
+          <CurrentInningsView innings={current} />
+        </>
       )}
 
       <FullScorecardSection
@@ -205,6 +216,45 @@ export default function LiveMatchView({ initial }: { initial: MatchState }) {
 
 function getTeamInnings(teamId: string, list: (Innings | undefined)[]) {
   return list.find((i) => i?.battingTeamId === teamId);
+}
+
+function PublicPredictorBlock({
+  state,
+  innings,
+}: {
+  state: MatchState;
+  innings: Innings;
+}) {
+  const i1 = state.innings.find((i) => i.inningsNumber === 1);
+  const isFirstInnings = innings.inningsNumber === 1;
+  const target = !isFirstInnings && i1 ? i1.totalRuns + 1 : null;
+  const sideForTeam =
+    innings.battingTeamId === state.team1.id ? 1 : 2;
+  const rosterFromMP = (state.matchPlayers ?? []).filter(
+    (m) => m.side === sideForTeam,
+  ).length;
+  const rosterSize = rosterFromMP > 0 ? rosterFromMP : 11;
+  const totalWickets =
+    innings.maxWickets ?? Math.min(10, Math.max(1, rosterSize - 1));
+  return (
+    <MatchPredictor
+      battingTeamName={
+        innings.battingTeam.shortName || innings.battingTeam.name
+      }
+      bowlingTeamName={
+        innings.bowlingTeam.shortName || innings.bowlingTeam.name
+      }
+      input={{
+        battingRuns: innings.totalRuns,
+        battingWickets: innings.totalWickets,
+        battingBalls: innings.totalBalls,
+        oversPerSide: innings.maxOvers ?? state.oversPerSide,
+        totalWickets,
+        target,
+        isFirstInnings,
+      }}
+    />
+  );
 }
 
 function ScoreBlock({ team, innings }: { team: Team; innings?: Innings }) {

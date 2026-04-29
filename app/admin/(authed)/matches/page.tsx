@@ -92,9 +92,6 @@ export default async function AdminMatchesPage() {
                       <Link href={`/admin/matches/${m.id}`} className="rounded-md bg-slate-900 px-3 py-1 text-xs font-medium text-white hover:bg-slate-800">
                         {m.status === "LIVE" ? "Score live" : m.status === "SCHEDULED" ? "Manage" : "View"}
                       </Link>
-                      <Link href={`/admin/matches/${m.id}/edit`} className="rounded-md px-2 py-1 text-xs font-medium text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50">
-                        Edit
-                      </Link>
                       <DeleteMatchButton
                         matchId={m.id}
                         matchTitle={`${m.team1.name} vs ${m.team2.name}`}

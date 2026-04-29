@@ -40,6 +40,7 @@ async function createPlayer(formData: FormData) {
   const role = String(formData.get("role") || "BATTER");
   const battingStyle = String(formData.get("battingStyle") || "RHB");
   const bowlingStyle = String(formData.get("bowlingStyle") || "").trim();
+  const phone = String(formData.get("phone") || "").trim();
   const jerseyNumberRaw = String(formData.get("jerseyNumber") || "").trim();
   const jerseyNumber = jerseyNumberRaw ? Number(jerseyNumberRaw) : null;
 
@@ -55,6 +56,7 @@ async function createPlayer(formData: FormData) {
       role,
       battingStyle,
       bowlingStyle: bowlingStyle || null,
+      phone: phone || null,
       jerseyNumber: jerseyNumber && Number.isFinite(jerseyNumber) ? jerseyNumber : null,
     },
   });
@@ -181,6 +183,17 @@ export default async function AdminPlayersPage() {
           <div>
             <label className="label">Jersey #</label>
             <input className="input" name="jerseyNumber" type="number" min={0} max={999} />
+          </div>
+          <div>
+            <label className="label">Phone (optional)</label>
+            <input
+              className="input"
+              name="phone"
+              type="tel"
+              placeholder="e.g. 9876543210"
+              inputMode="numeric"
+              pattern="[0-9 +()-]*"
+            />
           </div>
         </div>
         <button type="submit" className="btn-primary">Add player</button>

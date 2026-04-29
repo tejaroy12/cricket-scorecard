@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { RosterManager } from "./RosterManager";
 
 type Player = { id: string; name: string; jerseyNumber?: number | null; teamId?: string | null };
 type Team = { id: string; name: string; shortName: string; players: Player[] };
@@ -178,6 +179,19 @@ export default function ScoringConsole({ initial }: { initial: MatchState }) {
     <div className="space-y-6">
       <Header state={state} />
 
+      <div className="flex flex-wrap items-center gap-2">
+        <Link
+          href={`/admin/matches/${state.id}/edit`}
+          className="rounded-md px-3 py-1.5 text-xs font-medium text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50"
+        >
+          Edit match
+        </Link>
+        <span className="text-xs text-slate-400">
+          Wrong overs / teams / venue? Edit them above (teams lock once a ball
+          is bowled).
+        </span>
+      </div>
+
       {error && (
         <div className="rounded-md bg-red-50 px-4 py-2 text-sm text-red-700 ring-1 ring-red-100">
           {error}
@@ -189,6 +203,8 @@ export default function ScoringConsole({ initial }: { initial: MatchState }) {
           {autoMessage}
         </div>
       )}
+
+      <RosterManager state={state} onChanged={refresh} />
 
       {state.status === "SCHEDULED" && (
         <TossPanel state={state} onSubmit={(b) => call(`/api/matches/${state.id}/toss`, b)} busy={busy} />

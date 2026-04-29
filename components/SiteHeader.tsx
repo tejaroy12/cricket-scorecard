@@ -10,6 +10,7 @@ const NAV_LINKS = [
   { href: "/teams", label: "Teams" },
   { href: "/players", label: "Players" },
   { href: "/leaderboard", label: "Leaderboard" },
+  { href: "/register", label: "Register" },
 ];
 
 export function SiteHeader({ loggedIn }: { loggedIn: boolean }) {

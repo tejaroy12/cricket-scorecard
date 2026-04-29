@@ -30,11 +30,13 @@ model Player {
   id            String   @id @default(cuid())
   name          String
   employeeId    String?  @unique
+  phone         String?
   role          String   @default("BATTER") // BATTER, BOWLER, ALL_ROUNDER, WICKET_KEEPER
   battingStyle  String   @default("RHB")    // RHB, LHB
   bowlingStyle  String?                     // RIGHT_FAST, LEFT_SPIN, etc.
   photoUrl      String?
   jerseyNumber  Int?
+  selfRegistered Boolean @default(false)
   createdAt     DateTime @default(now())
 
   // Optional "home" / default team. Players can also be added to either side
@@ -190,4 +192,21 @@ model BowlingEntry {
 
   @@unique([inningsId, playerId])
   @@index([inningsId])
+}
+
+// Audit log for admin-side events that should also fan out to a notification
+// channel (SMS / WhatsApp / webhook). Acts as a durable record even when the
+// outbound channel is offline.
+model Notification {
+  id        String   @id @default(cuid())
+  kind      String   // MATCH_DELETED, PLAYER_REGISTERED, ...
+  title     String
+  body      String
+  phone     String?  // target phone number for SMS / WhatsApp
+  metadata  String?  // JSON-encoded extra context
+  delivered Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([kind])
 }

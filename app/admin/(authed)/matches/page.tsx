@@ -1,20 +1,11 @@
 import Link from "next/link";
-import { prisma } from "@/lib/prisma";
-import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
+import { prisma } from "@/lib/prisma";
+import { DeleteMatchButton } from "./DeleteMatchDialog";
 
 export const dynamic = "force-dynamic";
 
 const FLASH_COOKIE = "hc_flash";
-
-function setFlash(message: string, kind: "ok" | "err" = "ok") {
-  cookies().set(FLASH_COOKIE, JSON.stringify({ message, kind }), {
-    path: "/admin/matches",
-    maxAge: 30,
-    httpOnly: false,
-    sameSite: "lax",
-  });
-}
 
 function readFlash(): { message: string; kind: "ok" | "err" } | null {
   const c = cookies().get(FLASH_COOKIE);
@@ -26,23 +17,6 @@ function readFlash(): { message: string; kind: "ok" | "err" } | null {
   } catch {
     return null;
   }
-}
-
-async function deleteMatch(formData: FormData) {
-  "use server";
-  const { isAuthenticated } = await import("@/lib/auth");
-  if (!isAuthenticated()) throw new Error("Unauthorized");
-  const id = String(formData.get("id") || "");
-  if (!id) return;
-  try {
-    await prisma.match.delete({ where: { id } });
-    setFlash("Match deleted.");
-  } catch (e: any) {
-    setFlash(`Could not delete match: ${e?.message ?? "unknown error"}`, "err");
-  }
-  revalidatePath("/admin/matches");
-  revalidatePath("/matches");
-  revalidatePath("/");
 }
 
 export default async function AdminMatchesPage() {
@@ -118,12 +92,13 @@ export default async function AdminMatchesPage() {
                       <Link href={`/admin/matches/${m.id}`} className="rounded-md bg-slate-900 px-3 py-1 text-xs font-medium text-white hover:bg-slate-800">
                         {m.status === "LIVE" ? "Score live" : m.status === "SCHEDULED" ? "Manage" : "View"}
                       </Link>
-                      <form action={deleteMatch} className="inline">
-                        <input type="hidden" name="id" value={m.id} />
-                        <button type="submit" className="rounded-md px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50">
-                          Delete
-                        </button>
-                      </form>
+                      <Link href={`/admin/matches/${m.id}/edit`} className="rounded-md px-2 py-1 text-xs font-medium text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50">
+                        Edit
+                      </Link>
+                      <DeleteMatchButton
+                        matchId={m.id}
+                        matchTitle={`${m.team1.name} vs ${m.team2.name}`}
+                      />
                     </div>
                   </td>
                 </tr>

@@ -67,6 +67,7 @@ async function updatePlayer(formData: FormData) {
   const role = String(formData.get("role") || "BATTER");
   const battingStyle = String(formData.get("battingStyle") || "RHB");
   const bowlingStyleRaw = String(formData.get("bowlingStyle") || "").trim();
+  const phoneRaw = String(formData.get("phone") || "").trim();
   const jerseyRaw = String(formData.get("jerseyNumber") || "").trim();
   const employeeIdRaw = String(formData.get("employeeId") || "").trim();
 
@@ -98,6 +99,7 @@ async function updatePlayer(formData: FormData) {
         role,
         battingStyle,
         bowlingStyle: bowlingStyleRaw || null,
+        phone: phoneRaw || null,
         jerseyNumber,
         employeeId: employeeIdRaw || null,
       },
@@ -251,6 +253,19 @@ export default async function EditPlayerPage({
               min={0}
               max={999}
               defaultValue={player.jerseyNumber ?? ""}
+            />
+          </div>
+
+          <div>
+            <label className="label">Phone (optional)</label>
+            <input
+              className="input"
+              name="phone"
+              type="tel"
+              placeholder="e.g. 9876543210"
+              inputMode="numeric"
+              pattern="[0-9 +()-]*"
+              defaultValue={player.phone ?? ""}
             />
           </div>
 

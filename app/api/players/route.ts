@@ -20,6 +20,7 @@ export async function GET() {
       name: p.name,
       role: p.role,
       jerseyNumber: p.jerseyNumber,
+      phone: p.phone,
       team: p.team ? { id: p.team.id, name: p.team.name } : null,
     })),
   );

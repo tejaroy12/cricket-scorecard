@@ -4,15 +4,33 @@ import { NewMatchForm } from "./NewMatchForm";
 
 export const dynamic = "force-dynamic";
 
+type RosterEntry = {
+  playerId: string;
+  isCaptain: boolean;
+  isViceCaptain: boolean;
+  isWicketKeeper: boolean;
+};
+
 type CreateMatchInput = {
   team1Id: string;
   team2Id: string;
   venue: string;
   oversPerSide: number;
   matchDate: string;
-  team1PlayerIds: string[];
-  team2PlayerIds: string[];
+  team1Roster: RosterEntry[];
+  team2Roster: RosterEntry[];
 };
+
+function dedupeRoster(roster: RosterEntry[]): RosterEntry[] {
+  const seen = new Set<string>();
+  const out: RosterEntry[] = [];
+  for (const r of roster ?? []) {
+    if (!r?.playerId || seen.has(r.playerId)) continue;
+    seen.add(r.playerId);
+    out.push(r);
+  }
+  return out;
+}
 
 async function createMatchAction(
   input: CreateMatchInput,
@@ -22,25 +40,23 @@ async function createMatchAction(
   if (!isAuthenticated()) return { ok: false, error: "Unauthorized" };
 
   const { team1Id, team2Id, venue, oversPerSide, matchDate } = input;
-  const team1PlayerIds = Array.from(new Set(input.team1PlayerIds || []));
-  const team2PlayerIds = Array.from(new Set(input.team2PlayerIds || []));
+  const team1Roster = dedupeRoster(input.team1Roster || []);
+  const team2Roster = dedupeRoster(input.team2Roster || []);
 
   if (!team1Id || !team2Id) return { ok: false, error: "Pick both teams." };
   if (team1Id === team2Id)
     return { ok: false, error: "Team 1 and Team 2 must be different." };
-  if (team1PlayerIds.length < 2 || team2PlayerIds.length < 2) {
+  if (team1Roster.length < 2 || team2Roster.length < 2) {
     return {
       ok: false,
       error: "Each side needs at least 2 players.",
     };
   }
-  // Defensive: ensure no overlap between sides
-  const overlap = team1PlayerIds.filter((id) => team2PlayerIds.includes(id));
+
+  const team1Ids = new Set(team1Roster.map((r) => r.playerId));
+  const overlap = team2Roster.filter((r) => team1Ids.has(r.playerId));
   if (overlap.length > 0) {
-    return {
-      ok: false,
-      error: "A player can't be on both sides.",
-    };
+    return { ok: false, error: "A player can't be on both sides." };
   }
 
   const date = matchDate ? new Date(matchDate) : new Date();
@@ -59,15 +75,21 @@ async function createMatchAction(
     });
 
     const rows = [
-      ...team1PlayerIds.map((pid) => ({
+      ...team1Roster.map((r) => ({
         matchId: match.id,
-        playerId: pid,
+        playerId: r.playerId,
         side: 1,
+        isCaptain: !!r.isCaptain,
+        isViceCaptain: !!r.isViceCaptain,
+        isWicketKeeper: !!r.isWicketKeeper,
       })),
-      ...team2PlayerIds.map((pid) => ({
+      ...team2Roster.map((r) => ({
         matchId: match.id,
-        playerId: pid,
+        playerId: r.playerId,
         side: 2,
+        isCaptain: !!r.isCaptain,
+        isViceCaptain: !!r.isViceCaptain,
+        isWicketKeeper: !!r.isWicketKeeper,
       })),
     ];
 
@@ -95,7 +117,8 @@ export default async function NewMatchPage() {
         <h1 className="text-2xl font-bold text-slate-900">New match</h1>
         <p className="text-sm text-slate-500">
           Pick the two sides and assemble each lineup from your player database
-          — players don&apos;t have to belong to those teams.
+          — players don&apos;t have to belong to those teams. Tag each side&apos;s
+          captain (C), vice-captain (VC) and wicket-keeper (WK).
         </p>
       </div>
 
@@ -107,6 +130,7 @@ export default async function NewMatchPage() {
           role: p.role,
           battingStyle: p.battingStyle,
           jerseyNumber: p.jerseyNumber,
+          phone: p.phone,
           team: p.team ? { id: p.team.id, name: p.team.name } : null,
         }))}
         createMatchAction={createMatchAction}

@@ -18,8 +18,17 @@ type Candidate = {
   name: string;
   role: string;
   jerseyNumber: number | null;
+  phone: string | null;
   team: { id: string; name: string } | null;
 };
+
+function phoneMatchesQuery(phone: string | null | undefined, q: string) {
+  if (!phone) return false;
+  const digits = phone.replace(/\D/g, "");
+  const qDigits = q.replace(/\D/g, "");
+  if (qDigits.length >= 3 && digits.includes(qDigits)) return true;
+  return phone.toLowerCase().includes(q);
+}
 
 /**
  * Mid-match roster manager. Lets the admin add or drop players on either
@@ -84,7 +93,8 @@ export function RosterManager({
       .filter((c) => {
         if (!q) return true;
         const hay = `${c.name} ${c.team?.name ?? "free agent"} ${c.role} ${c.jerseyNumber ?? ""}`.toLowerCase();
-        return hay.includes(q);
+        if (hay.includes(q)) return true;
+        return phoneMatchesQuery(c.phone, q);
       })
       .slice(0, 30);
   }, [candidates, onSidePlayerIds, search]);
@@ -203,7 +213,7 @@ export function RosterManager({
               </div>
               <input
                 className="input flex-1 min-w-[180px]"
-                placeholder="Search by name, team, role…"
+                placeholder="Search by name, team, role, or phone…"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />

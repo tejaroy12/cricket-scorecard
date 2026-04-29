@@ -35,11 +35,27 @@ async function createPlayer(
   "use server";
   const name = input.name.trim();
   const phone = input.phone.trim();
-  const phoneDigits = phone.replace(/\D/g, "");
+  const phoneDigits = phone.replace(/\D/g, "").slice(-10);
 
   if (!name) return { ok: false, error: "Player name is required." };
   if (phoneDigits.length < 10)
     return { ok: false, error: "Phone number must be at least 10 digits." };
+
+  // Phone must be unique across players. Compare on the trailing 10 digits
+  // so different formattings of the same number still collide.
+  const candidates = await prisma.player.findMany({
+    where: { phone: { not: null } },
+    select: { id: true, name: true, phone: true },
+  });
+  const collision = candidates.find(
+    (p) => (p.phone ?? "").replace(/\D/g, "").slice(-10) === phoneDigits,
+  );
+  if (collision) {
+    return {
+      ok: false,
+      error: `That phone number is already used by "${collision.name}". Please enter the correct number.`,
+    };
+  }
 
   const teamId = input.teamId || null;
   const jersey =

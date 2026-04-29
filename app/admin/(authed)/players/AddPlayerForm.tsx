@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { Spinner } from "@/components/Spinner";
 
 type Team = { id: string; name: string };
 type Result = { ok: boolean; error?: string };
@@ -236,7 +237,11 @@ export function AddPlayerForm({
 
       <div className="flex flex-wrap items-center gap-2">
         <button type="submit" disabled={pending} className="btn-primary">
-          {pending ? "Adding…" : "Add player"}
+          {pending ? (
+            <Spinner label="Adding…" />
+          ) : (
+            "Add player"
+          )}
         </button>
         <button
           type="button"

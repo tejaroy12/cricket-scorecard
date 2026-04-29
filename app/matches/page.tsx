@@ -21,7 +21,7 @@ export default async function MatchesPage() {
 
   return (
     <div className="space-y-10">
-      {live.length > 0 && <AutoRefresher intervalMs={8000} />}
+      {live.length > 0 && <AutoRefresher intervalMs={4000} />}
 
       <div>
         <h1 className="text-3xl font-bold text-slate-900">All matches</h1>

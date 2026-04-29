@@ -1,6 +1,8 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
+import { Spinner } from "@/components/Spinner";
+import { LineupPicker, RolesMap } from "../LineupPicker";
 
 type Team = { id: string; name: string };
 type Player = {
@@ -9,7 +11,15 @@ type Player = {
   role: string;
   battingStyle: string;
   jerseyNumber: number | null;
+  phone: string | null;
   team: { id: string; name: string } | null;
+};
+
+export type RosterEntry = {
+  playerId: string;
+  isCaptain: boolean;
+  isViceCaptain: boolean;
+  isWicketKeeper: boolean;
 };
 
 type CreateMatchInput = {
@@ -18,8 +28,8 @@ type CreateMatchInput = {
   venue: string;
   oversPerSide: number;
   matchDate: string;
-  team1PlayerIds: string[];
-  team2PlayerIds: string[];
+  team1Roster: RosterEntry[];
+  team2Roster: RosterEntry[];
 };
 
 export function NewMatchForm({
@@ -40,21 +50,46 @@ export function NewMatchForm({
   );
   const [team1PlayerIds, setTeam1PlayerIds] = useState<string[]>([]);
   const [team2PlayerIds, setTeam2PlayerIds] = useState<string[]>([]);
+  const [team1Roles, setTeam1Roles] = useState<RolesMap>({});
+  const [team2Roles, setTeam2Roles] = useState<RolesMap>({});
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+
+  function clearRolesFor(side: 1 | 2, playerId: string) {
+    if (side === 1) {
+      setTeam1Roles((cur) => {
+        const c = { ...cur };
+        delete c[playerId];
+        return c;
+      });
+    } else {
+      setTeam2Roles((cur) => {
+        const c = { ...cur };
+        delete c[playerId];
+        return c;
+      });
+    }
+  }
 
   function togglePlayer(side: 1 | 2, playerId: string) {
     if (side === 1) {
       setTeam1PlayerIds((cur) => {
-        if (cur.includes(playerId)) return cur.filter((x) => x !== playerId);
-        // remove from other side if present
+        if (cur.includes(playerId)) {
+          clearRolesFor(1, playerId);
+          return cur.filter((x) => x !== playerId);
+        }
         setTeam2PlayerIds((c2) => c2.filter((x) => x !== playerId));
+        clearRolesFor(2, playerId);
         return [...cur, playerId];
       });
     } else {
       setTeam2PlayerIds((cur) => {
-        if (cur.includes(playerId)) return cur.filter((x) => x !== playerId);
+        if (cur.includes(playerId)) {
+          clearRolesFor(2, playerId);
+          return cur.filter((x) => x !== playerId);
+        }
         setTeam1PlayerIds((c1) => c1.filter((x) => x !== playerId));
+        clearRolesFor(1, playerId);
         return [...cur, playerId];
       });
     }
@@ -68,6 +103,15 @@ export function NewMatchForm({
     () => new Set(team2PlayerIds),
     [team2PlayerIds],
   );
+
+  function buildRoster(ids: string[], roles: RolesMap): RosterEntry[] {
+    return ids.map((pid) => ({
+      playerId: pid,
+      isCaptain: !!roles[pid]?.isCaptain,
+      isViceCaptain: !!roles[pid]?.isViceCaptain,
+      isWicketKeeper: !!roles[pid]?.isWicketKeeper,
+    }));
+  }
 
   function submit() {
     setError(null);
@@ -91,8 +135,8 @@ export function NewMatchForm({
         venue: venue.trim() || "Hitachi Sports Ground",
         oversPerSide: Number.isFinite(oversPerSide) ? oversPerSide : 20,
         matchDate,
-        team1PlayerIds,
-        team2PlayerIds,
+        team1Roster: buildRoster(team1PlayerIds, team1Roles),
+        team2Roster: buildRoster(team2PlayerIds, team2Roles),
       });
       if (!res.ok) setError(res.error || "Could not create match.");
     });
@@ -174,29 +218,33 @@ export function NewMatchForm({
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <RosterPicker
+        <LineupPicker
           title={
             team1Id
               ? teams.find((t) => t.id === team1Id)?.name ?? "Team 1"
               : "Team 1 lineup"
           }
-          subtitle="Pick anyone from your player database."
+          subtitle="Pick from the player database. Search by name or phone."
           players={players}
-          selectedSet={team1Selected}
+          selectedIds={team1PlayerIds}
           otherSet={team2Selected}
+          roles={team1Roles}
           onToggle={(id) => togglePlayer(1, id)}
+          onRolesChange={setTeam1Roles}
         />
-        <RosterPicker
+        <LineupPicker
           title={
             team2Id
               ? teams.find((t) => t.id === team2Id)?.name ?? "Team 2"
               : "Team 2 lineup"
           }
-          subtitle="Pick anyone from your player database."
+          subtitle="Pick from the player database. Search by name or phone."
           players={players}
-          selectedSet={team2Selected}
+          selectedIds={team2PlayerIds}
           otherSet={team1Selected}
+          roles={team2Roles}
           onToggle={(id) => togglePlayer(2, id)}
+          onRolesChange={setTeam2Roles}
         />
       </div>
 
@@ -213,143 +261,12 @@ export function NewMatchForm({
           disabled={pending}
           className="btn-primary"
         >
-          {pending ? "Creating…" : "Create match"}
+          {pending ? <Spinner label="Creating…" /> : "Create match"}
         </button>
         <div className="text-xs text-slate-500">
           Side 1: <b>{team1PlayerIds.length}</b> selected · Side 2:{" "}
           <b>{team2PlayerIds.length}</b> selected
         </div>
-      </div>
-    </div>
-  );
-}
-
-function RosterPicker({
-  title,
-  subtitle,
-  players,
-  selectedSet,
-  otherSet,
-  onToggle,
-}: {
-  title: string;
-  subtitle: string;
-  players: Player[];
-  selectedSet: Set<string>;
-  otherSet: Set<string>;
-  onToggle: (playerId: string) => void;
-}) {
-  const [search, setSearch] = useState("");
-  const [showSelectedOnly, setShowSelectedOnly] = useState(false);
-
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    let list = players;
-    if (showSelectedOnly) list = list.filter((p) => selectedSet.has(p.id));
-    if (q) {
-      list = list.filter((p) => {
-        const hay = `${p.name} ${p.team?.name ?? "free agent"} ${p.role} ${p.jerseyNumber ?? ""}`.toLowerCase();
-        return hay.includes(q);
-      });
-    }
-    // selected players first
-    return list.slice().sort((a, b) => {
-      const sa = selectedSet.has(a.id) ? 0 : 1;
-      const sb = selectedSet.has(b.id) ? 0 : 1;
-      if (sa !== sb) return sa - sb;
-      return a.name.localeCompare(b.name);
-    });
-  }, [players, search, selectedSet, showSelectedOnly]);
-
-  return (
-    <div className="card overflow-hidden">
-      <div className="border-b border-slate-100 px-5 py-4">
-        <div className="flex items-start justify-between gap-2">
-          <div>
-            <h3 className="text-base font-bold text-slate-900">{title}</h3>
-            <p className="text-xs text-slate-500">{subtitle}</p>
-          </div>
-          <span className="rounded-full bg-hitachi/10 px-2.5 py-0.5 text-xs font-bold text-hitachi">
-            {selectedSet.size}
-          </span>
-        </div>
-        <div className="mt-3 flex items-center gap-2">
-          <input
-            className="input flex-1"
-            placeholder="Search by player name, team, role…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-          <button
-            type="button"
-            onClick={() => setShowSelectedOnly((v) => !v)}
-            className={
-              "rounded-md px-3 py-2 text-xs font-medium ring-1 transition " +
-              (showSelectedOnly
-                ? "bg-slate-900 text-white ring-slate-900"
-                : "bg-white text-slate-700 ring-slate-200 hover:bg-slate-50")
-            }
-          >
-            Selected
-          </button>
-        </div>
-      </div>
-
-      <div className="max-h-[360px] overflow-y-auto">
-        {filtered.length === 0 && (
-          <div className="px-5 py-10 text-center text-sm text-slate-500">
-            {players.length === 0
-              ? "No players in the database yet. Add some at /admin/players first."
-              : "No players match the current filter."}
-          </div>
-        )}
-        <ul className="divide-y divide-slate-100">
-          {filtered.map((p) => {
-            const isSelected = selectedSet.has(p.id);
-            const onOtherSide = otherSet.has(p.id);
-            return (
-              <li key={p.id}>
-                <button
-                  type="button"
-                  onClick={() => onToggle(p.id)}
-                  className={
-                    "flex w-full items-center gap-3 px-5 py-2.5 text-left transition " +
-                    (isSelected
-                      ? "bg-hitachi/5 hover:bg-hitachi/10"
-                      : "hover:bg-slate-50")
-                  }
-                >
-                  <input
-                    type="checkbox"
-                    checked={isSelected}
-                    readOnly
-                    className="h-4 w-4 cursor-pointer accent-hitachi"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-medium text-slate-900">
-                      {p.name}
-                      {p.jerseyNumber != null && (
-                        <span className="ml-1 text-xs text-slate-400">
-                          #{p.jerseyNumber}
-                        </span>
-                      )}
-                    </div>
-                    <div className="truncate text-xs text-slate-500">
-                      {p.team?.name ?? "Free agent"} ·{" "}
-                      {p.role.replace("_", "-").toLowerCase()} ·{" "}
-                      {p.battingStyle}
-                    </div>
-                  </div>
-                  {onOtherSide && (
-                    <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-800">
-                      Other side
-                    </span>
-                  )}
-                </button>
-              </li>
-            );
-          })}
-        </ul>
       </div>
     </div>
   );

@@ -11,7 +11,7 @@ async function registerPlayerAction(input: RegisterInput): Promise<Result> {
 
   const name = input.name.trim();
   const phone = input.phone.trim();
-  const phoneDigits = phone.replace(/\D/g, "");
+  const phoneDigits = phone.replace(/\D/g, "").slice(-10);
 
   if (!name) return { ok: false, error: "Please enter your full name." };
   if (phoneDigits.length < 10) {
@@ -24,6 +24,23 @@ async function registerPlayerAction(input: RegisterInput): Promise<Result> {
     !["BATTER", "BOWLER", "ALL_ROUNDER", "WICKET_KEEPER"].includes(input.role)
   ) {
     return { ok: false, error: "Pick a valid playing role." };
+  }
+
+  // Phone must be unique. If it already maps to a registered player, tell
+  // the user — they can use the Profile popup to claim their existing
+  // record instead of creating a duplicate.
+  const candidates = await prisma.player.findMany({
+    where: { phone: { not: null } },
+    select: { id: true, name: true, phone: true },
+  });
+  const collision = candidates.find(
+    (p) => (p.phone ?? "").replace(/\D/g, "").slice(-10) === phoneDigits,
+  );
+  if (collision) {
+    return {
+      ok: false,
+      error: `That phone number is already registered to "${collision.name}". Please enter the correct number, or use the Profile button at the top to open your existing profile.`,
+    };
   }
 
   const jersey =

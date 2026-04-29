@@ -279,15 +279,32 @@ export async function applyBall(input: BallInput) {
       ).length;
       const teamSize =
         matchRosterSize > 0 ? matchRosterSize : after.battingTeam.players.length;
-      const allOut = teamSize > 0 && after.totalWickets >= Math.max(1, teamSize - 1);
-      const oversComplete = after.totalBalls >= after.match.oversPerSide * 6;
 
+      // Super-over innings carry their own per-innings `maxOvers` /
+      // `maxWickets` (typically 1 over / 2 wickets). Fall back to the
+      // match-level overs and the standard "team-size minus 1" rule
+      // otherwise.
+      const effectiveMaxOvers = after.maxOvers ?? after.match.oversPerSide;
+      const effectiveMaxWickets =
+        after.maxWickets ?? Math.max(1, teamSize - 1);
+
+      const allOut =
+        effectiveMaxWickets > 0 && after.totalWickets >= effectiveMaxWickets;
+      const oversComplete = after.totalBalls >= effectiveMaxOvers * 6;
+
+      // For the standard chase (innings 2) and the super-over chase
+      // (innings 4) we close as soon as the target is overtaken.
       let chaseWon = false;
-      const innings1 = await tx.innings.findFirst({
-        where: { matchId: after.match.id, inningsNumber: 1 },
-      });
-      if (innings1 && after.inningsNumber === 2 && after.totalRuns > innings1.totalRuns) {
-        chaseWon = true;
+      if (after.inningsNumber === 2) {
+        const innings1 = await tx.innings.findFirst({
+          where: { matchId: after.match.id, inningsNumber: 1 },
+        });
+        if (innings1 && after.totalRuns > innings1.totalRuns) chaseWon = true;
+      } else if (after.inningsNumber === 4) {
+        const innings3 = await tx.innings.findFirst({
+          where: { matchId: after.match.id, inningsNumber: 3 },
+        });
+        if (innings3 && after.totalRuns > innings3.totalRuns) chaseWon = true;
       }
 
       if (allOut || oversComplete || chaseWon) {

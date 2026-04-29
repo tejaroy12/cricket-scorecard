@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { RosterManager } from "./RosterManager";
+import { Spinner } from "@/components/Spinner";
 
 type Player = { id: string; name: string; jerseyNumber?: number | null; teamId?: string | null };
 type Team = { id: string; name: string; shortName: string; players: Player[] };
@@ -59,6 +60,9 @@ type Innings = {
   totalBalls: number;
   extras: number;
   isClosed: boolean;
+  isSuperOver?: boolean;
+  maxOvers?: number | null;
+  maxWickets?: number | null;
   oversText: string;
   runRate: number;
   battingEntries: BattingEntry[];
@@ -132,7 +136,11 @@ export default function ScoringConsole({ initial }: { initial: MatchState }) {
   );
 
   const call = useCallback(
-    async (url: string, body?: any) => {
+    async (
+      url: string,
+      body?: any,
+      opts?: { onJson?: (j: any) => boolean },
+    ) => {
       setBusy(true);
       setError(null);
       try {
@@ -141,9 +149,16 @@ export default function ScoringConsole({ initial }: { initial: MatchState }) {
           headers: { "Content-Type": "application/json" },
           body: body ? JSON.stringify(body) : undefined,
         });
+        const j = await res.json().catch(() => ({}));
         if (!res.ok) {
-          const j = await res.json().catch(() => ({}));
           throw new Error(j.error || "Request failed");
+        }
+        // Allow callers to inspect a 200 body before triggering a refresh
+        // (used by the tied-match flow where we want to surface a banner
+        // without running router.refresh until the user picks an option).
+        if (opts?.onJson && opts.onJson(j) === false) {
+          await refresh();
+          return;
         }
         await refresh();
         router.refresh();
@@ -190,6 +205,12 @@ export default function ScoringConsole({ initial }: { initial: MatchState }) {
           Wrong overs / teams / venue? Edit them above (teams lock once a ball
           is bowled).
         </span>
+        {busy && (
+          <span className="ml-auto inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700 ring-1 ring-amber-100">
+            <Spinner size={12} />
+            Syncing…
+          </span>
+        )}
       </div>
 
       {error && (
@@ -223,7 +244,21 @@ export default function ScoringConsole({ initial }: { initial: MatchState }) {
             onBall={(b) => call(`/api/innings/${currentInnings.id}/ball`, b)}
             onUndo={() => call(`/api/innings/${currentInnings.id}/undo`)}
             onStartSecondInnings={() => call(`/api/matches/${state.id}/start-second-innings`)}
-            onComplete={() => call(`/api/matches/${state.id}/complete`)}
+            onStartSuperOver={() => call(`/api/matches/${state.id}/super-over`)}
+            onComplete={() =>
+              call(`/api/matches/${state.id}/complete`, undefined, {
+                onJson: (j) => {
+                  if (j && j.tied) {
+                    setAutoMessage(
+                      j.message ||
+                        "Match is tied. Tap 'Start Super Over' to break the tie.",
+                    );
+                    return false;
+                  }
+                  return true;
+                },
+              })
+            }
           />
           <RecentBalls innings={currentInnings} />
         </>
@@ -430,6 +465,7 @@ function ScoringPanel({
   onBall,
   onUndo,
   onStartSecondInnings,
+  onStartSuperOver,
   onComplete,
 }: {
   state: MatchState;
@@ -440,6 +476,7 @@ function ScoringPanel({
   onBall: (b: any) => void;
   onUndo: () => void;
   onStartSecondInnings: () => void;
+  onStartSuperOver: () => void;
   onComplete: () => void;
 }) {
   const battingTeamPlayers = getRosterForTeam(state, innings.battingTeamId);
@@ -452,20 +489,44 @@ function ScoringPanel({
   const currentBowler = innings.bowlingEntries.slice().sort((a, b) => b.balls - a.balls)[0];
 
   // End of innings: closed flag from server, all out (team-size aware), all overs bowled,
-  // OR (2nd innings) chase target reached.
+  // OR (2nd innings) chase target reached. Super-over innings honour their
+  // own per-innings maxOvers / maxWickets caps.
   const teamSize = battingTeamPlayers.length;
-  const maxOversReached = innings.totalBalls >= state.oversPerSide * 6;
-  const allOut = teamSize > 0 && innings.totalWickets >= Math.max(1, teamSize - 1);
+  const effectiveOvers = innings.maxOvers ?? state.oversPerSide;
+  const effectiveMaxWickets =
+    innings.maxWickets ?? Math.max(1, teamSize - 1);
+  const maxOversReached = innings.totalBalls >= effectiveOvers * 6;
+  const allOut =
+    effectiveMaxWickets > 0 && innings.totalWickets >= effectiveMaxWickets;
   const inningsOver = innings.isClosed || maxOversReached || allOut;
 
-  // Only show the openers form for a brand-new innings, never for one that has
-  // already ended (otherwise after all-out the UI would ask for new openers).
   const needsOpeners = !inningsOver && onCrease.length < 2;
 
   const isFirstInnings = innings.inningsNumber === 1;
+  const isSuperOver = innings.isSuperOver || innings.inningsNumber >= 3;
+
+  // After innings 2 closes with both totals equal, we can offer a super over.
+  const innings1 = state.innings.find((i) => i.inningsNumber === 1);
+  const innings2 = state.innings.find((i) => i.inningsNumber === 2);
+  const innings3 = state.innings.find((i) => i.inningsNumber === 3);
+  const innings4 = state.innings.find((i) => i.inningsNumber === 4);
+  const tiedAfterMain =
+    innings1 &&
+    innings2 &&
+    innings1.isClosed &&
+    innings2.isClosed &&
+    innings1.totalRuns === innings2.totalRuns;
+  const canStartSuperOver1 = !!tiedAfterMain && !innings3;
+  const canStartSuperOver2 =
+    !!innings3 && innings3.isClosed && !innings4;
 
   return (
     <div className="card space-y-5 p-5">
+      {isSuperOver && (
+        <div className="rounded-lg bg-amber-50 px-4 py-2 text-xs font-semibold text-amber-800 ring-1 ring-amber-100">
+          SUPER OVER · 1 over · {innings.maxWickets ?? 2} wickets
+        </div>
+      )}
       {needsOpeners ? (
         <OpenersForm
           batters={battingTeamPlayers}
@@ -510,6 +571,17 @@ function ScoringPanel({
                 className="btn-dark"
               >
                 End innings & start 2nd innings
+              </button>
+            )}
+            {(canStartSuperOver1 || canStartSuperOver2) && (
+              <button
+                disabled={busy}
+                onClick={onStartSuperOver}
+                className="btn-dark"
+              >
+                {canStartSuperOver1
+                  ? "Match tied — Start Super Over"
+                  : "Start 2nd Super Over innings"}
               </button>
             )}
             <button

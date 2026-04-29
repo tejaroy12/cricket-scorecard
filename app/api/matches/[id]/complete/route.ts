@@ -24,6 +24,8 @@ export async function POST(
 
   const innings1 = match.innings.find((i) => i.inningsNumber === 1);
   const innings2 = match.innings.find((i) => i.inningsNumber === 2);
+  const innings3 = match.innings.find((i) => i.inningsNumber === 3);
+  const innings4 = match.innings.find((i) => i.inningsNumber === 4);
 
   function rosterSize(teamId: string, fallback: number): number {
     const side =
@@ -34,6 +36,7 @@ export async function POST(
 
   let winnerTeamId: string | null = null;
   let resultText = "Match abandoned";
+  let isTie = false;
 
   if (innings1 && innings2) {
     if (innings2.totalRuns > innings1.totalRuns) {
@@ -50,15 +53,45 @@ export async function POST(
       const margin = innings1.totalRuns - innings2.totalRuns;
       resultText = `${innings1.battingTeam.name} won by ${margin} run${margin === 1 ? "" : "s"}`;
     } else {
+      isTie = true;
       resultText = "Match tied";
     }
   } else if (innings1) {
     resultText = `${innings1.battingTeam.name} ended on ${innings1.totalRuns}/${innings1.totalWickets}`;
   }
 
+  // Super-over takes precedence over the regular match result when present.
+  if (innings3 && innings4) {
+    if (innings4.totalRuns > innings3.totalRuns) {
+      winnerTeamId = innings4.battingTeamId;
+      resultText = `${innings4.battingTeam.name} won the Super Over by ${innings4.totalRuns - innings3.totalRuns} run${innings4.totalRuns - innings3.totalRuns === 1 ? "" : "s"}`;
+      isTie = false;
+    } else if (innings3.totalRuns > innings4.totalRuns) {
+      winnerTeamId = innings3.battingTeamId;
+      resultText = `${innings3.battingTeam.name} won the Super Over by ${innings3.totalRuns - innings4.totalRuns} run${innings3.totalRuns - innings4.totalRuns === 1 ? "" : "s"}`;
+      isTie = false;
+    } else {
+      isTie = true;
+      resultText = "Super Over tied — match remains tied";
+    }
+  }
+
+  // If the match is tied and no super over has been played yet, return early
+  // and signal the UI so it can offer to start one. We don't mark the match
+  // COMPLETED yet so the admin can still trigger the super over.
+  if (isTie && !innings3) {
+    return NextResponse.json({
+      ok: false,
+      tied: true,
+      resultText,
+      message: "Match is tied. Start a Super Over to break the tie.",
+    });
+  }
+
   await prisma.$transaction(async (tx) => {
-    if (innings1) await tx.innings.update({ where: { id: innings1.id }, data: { isClosed: true } });
-    if (innings2) await tx.innings.update({ where: { id: innings2.id }, data: { isClosed: true } });
+    for (const i of [innings1, innings2, innings3, innings4]) {
+      if (i) await tx.innings.update({ where: { id: i.id }, data: { isClosed: true } });
+    }
     await tx.match.update({
       where: { id: params.id },
       data: { status: "COMPLETED", winnerTeamId, resultText },

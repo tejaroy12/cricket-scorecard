@@ -3,7 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
-import { EditMatchForm } from "./EditMatchForm";
+import { EditMatchForm, RosterEntry } from "./EditMatchForm";
 
 export const dynamic = "force-dynamic";
 
@@ -43,9 +43,20 @@ type EditMatchInput = {
   venue: string;
   oversPerSide: number;
   matchDate: string;
-  team1PlayerIds: string[];
-  team2PlayerIds: string[];
+  team1Roster: RosterEntry[];
+  team2Roster: RosterEntry[];
 };
+
+function dedupe(roster: RosterEntry[]): RosterEntry[] {
+  const seen = new Set<string>();
+  const out: RosterEntry[] = [];
+  for (const r of roster ?? []) {
+    if (!r?.playerId || seen.has(r.playerId)) continue;
+    seen.add(r.playerId);
+    out.push(r);
+  }
+  return out;
+}
 
 async function updateMatchAction(
   id: string,
@@ -73,8 +84,6 @@ async function updateMatchAction(
     return { ok: false, error: "Team 1 and Team 2 must be different." };
   }
 
-  // If any balls have been bowled, freeze team selection so we don't break
-  // existing innings/scorecards. Otherwise allow swapping teams + rosters.
   if (
     lockedFields &&
     (input.team1Id !== match.team1Id || input.team2Id !== match.team2Id)
@@ -86,9 +95,10 @@ async function updateMatchAction(
     };
   }
 
-  const team1PlayerIds = Array.from(new Set(input.team1PlayerIds || []));
-  const team2PlayerIds = Array.from(new Set(input.team2PlayerIds || []));
-  const overlap = team1PlayerIds.filter((p) => team2PlayerIds.includes(p));
+  const team1Roster = dedupe(input.team1Roster || []);
+  const team2Roster = dedupe(input.team2Roster || []);
+  const team1Ids = new Set(team1Roster.map((r) => r.playerId));
+  const overlap = team2Roster.filter((r) => team1Ids.has(r.playerId));
   if (overlap.length > 0) {
     return { ok: false, error: "A player can't be on both sides." };
   }
@@ -108,31 +118,27 @@ async function updateMatchAction(
       },
     });
 
-    // Roster sync: only diff & apply when balls haven't been scored, OR when
-    // adding net-new players (admin can always grow the roster mid-match).
+    const desired = [
+      ...team1Roster.map((r) => ({ ...r, side: 1 })),
+      ...team2Roster.map((r) => ({ ...r, side: 2 })),
+    ];
+    const desiredByPlayer = new Map(
+      desired.map((d) => [d.playerId, d] as const),
+    );
+
     const existing = await tx.matchPlayer.findMany({
       where: { matchId: id },
       select: { id: true, playerId: true, side: true },
     });
-    const desired = [
-      ...team1PlayerIds.map((p) => ({ playerId: p, side: 1 })),
-      ...team2PlayerIds.map((p) => ({ playerId: p, side: 2 })),
-    ];
 
-    const desiredKey = (p: string, s: number) => `${p}:${s}`;
-    const existingKey = (e: { playerId: string; side: number }) =>
-      desiredKey(e.playerId, e.side);
-
-    const desiredKeys = new Set(desired.map((d) => desiredKey(d.playerId, d.side)));
-    const existingKeys = new Set(existing.map(existingKey));
-
-    const toAdd = desired.filter(
-      (d) => !existingKeys.has(desiredKey(d.playerId, d.side)),
+    const existingByPlayer = new Map(
+      existing.map((e) => [e.playerId, e] as const),
     );
-    const toRemove = existing.filter((e) => !desiredKeys.has(existingKey(e)));
+
+    // Compute removals (existing not desired anymore).
+    const toRemove = existing.filter((e) => !desiredByPlayer.has(e.playerId));
 
     if (toRemove.length > 0) {
-      // Don't remove anyone who has already batted/bowled.
       const removeIds = toRemove.map((r) => r.playerId);
       const [bat, bow] = await Promise.all([
         tx.battingEntry.findMany({
@@ -158,15 +164,34 @@ async function updateMatchAction(
       }
     }
 
-    if (toAdd.length > 0) {
-      await tx.matchPlayer.createMany({
-        data: toAdd.map((d) => ({
-          matchId: id,
-          playerId: d.playerId,
-          side: d.side,
-        })),
-        skipDuplicates: true,
-      });
+    // Add new + update flags on existing.
+    for (const d of desired) {
+      const e = existingByPlayer.get(d.playerId);
+      if (!e) {
+        await tx.matchPlayer.create({
+          data: {
+            matchId: id,
+            playerId: d.playerId,
+            side: d.side,
+            isCaptain: !!d.isCaptain,
+            isViceCaptain: !!d.isViceCaptain,
+            isWicketKeeper: !!d.isWicketKeeper,
+          },
+        });
+      } else {
+        await tx.matchPlayer.update({
+          where: { id: e.id },
+          data: {
+            // Side may change pre-toss; once balls are scored we still allow
+            // toggling captain/VC/WK but the side stays put because of the
+            // protected-player guard above.
+            side: e.side === d.side ? e.side : d.side,
+            isCaptain: !!d.isCaptain,
+            isViceCaptain: !!d.isViceCaptain,
+            isWicketKeeper: !!d.isWicketKeeper,
+          },
+        });
+      }
     }
   });
 
@@ -206,11 +231,20 @@ export default async function EditMatchPage({
   const ballsBowled = match.innings.reduce((s, i) => s + i.totalBalls, 0);
   const teamsLocked = ballsBowled > 0;
 
-  // Bind matchId into the server action by partial application.
   async function action(input: EditMatchInput) {
     "use server";
     return updateMatchAction(match!.id, input);
   }
+
+  const initialRoster = (side: number): RosterEntry[] =>
+    match.matchPlayers
+      .filter((mp) => mp.side === side)
+      .map((mp) => ({
+        playerId: mp.playerId,
+        isCaptain: !!mp.isCaptain,
+        isViceCaptain: !!mp.isViceCaptain,
+        isWicketKeeper: !!mp.isWicketKeeper,
+      }));
 
   return (
     <div className="space-y-6">
@@ -259,6 +293,7 @@ export default async function EditMatchPage({
           role: p.role,
           battingStyle: p.battingStyle,
           jerseyNumber: p.jerseyNumber,
+          phone: p.phone,
           team: p.team ? { id: p.team.id, name: p.team.name } : null,
         }))}
         match={{
@@ -269,12 +304,8 @@ export default async function EditMatchPage({
           oversPerSide: match.oversPerSide,
           matchDate: match.matchDate.toISOString(),
         }}
-        initialTeam1PlayerIds={match.matchPlayers
-          .filter((mp) => mp.side === 1)
-          .map((mp) => mp.playerId)}
-        initialTeam2PlayerIds={match.matchPlayers
-          .filter((mp) => mp.side === 2)
-          .map((mp) => mp.playerId)}
+        initialTeam1Roster={initialRoster(1)}
+        initialTeam2Roster={initialRoster(2)}
         updateAction={action}
       />
     </div>

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { Spinner } from "@/components/Spinner";
 
 export type RegisterInput = {
   name: string;
@@ -210,7 +211,7 @@ export function RegisterForm({
 
       <div className="flex flex-wrap items-center gap-2 pt-1">
         <button type="submit" disabled={pending} className="btn-primary">
-          {pending ? "Registering…" : "Register me"}
+          {pending ? <Spinner label="Registering…" /> : "Register me"}
         </button>
         <Link href="/players" className="btn-ghost">
           Browse players first

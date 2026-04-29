@@ -90,6 +90,30 @@ async function updatePlayer(formData: FormData) {
       ? Math.max(0, Math.min(999, Math.trunc(jerseyParsed)))
       : null;
 
+  // Phone uniqueness (only if a phone was provided).
+  if (phoneRaw) {
+    const trailing = phoneRaw.replace(/\D/g, "").slice(-10);
+    if (trailing.length < 10) {
+      setEditFlash(id, "Phone number must be at least 10 digits.", "err");
+      redirect(`/admin/players/${id}/edit`);
+    }
+    const others = await prisma.player.findMany({
+      where: { phone: { not: null }, NOT: { id } },
+      select: { id: true, name: true, phone: true },
+    });
+    const collision = others.find(
+      (p) => (p.phone ?? "").replace(/\D/g, "").slice(-10) === trailing,
+    );
+    if (collision) {
+      setEditFlash(
+        id,
+        `That phone number is already used by "${collision.name}". Please enter the correct number.`,
+        "err",
+      );
+      redirect(`/admin/players/${id}/edit`);
+    }
+  }
+
   try {
     await prisma.player.update({
       where: { id },

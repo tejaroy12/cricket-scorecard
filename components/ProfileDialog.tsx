@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Spinner } from "@/components/Spinner";
 
 type CurrentPlayer = {
   id: string;
@@ -264,7 +265,7 @@ export function ProfileDialog({
               disabled={busy || !phone || !!phoneError}
               className="w-full rounded-md bg-hitachi px-3 py-2 text-sm font-semibold text-white hover:bg-hitachi-dark disabled:opacity-50"
             >
-              {busy ? "Looking up…" : "Continue to my profile"}
+              {busy ? <Spinner label="Looking up…" /> : "Continue to my profile"}
             </button>
             <div className="pt-1 text-center text-xs text-slate-500">
               New here?{" "}

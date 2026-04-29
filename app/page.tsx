@@ -2,70 +2,144 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { MatchCard } from "@/components/MatchCard";
 import { AutoRefresher } from "@/components/AutoRefresher";
+import { getCurrentPlayer } from "@/lib/playerSession";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 export default async function HomePage() {
-  const [liveMatches, recentMatches, upcomingMatches, teamCount, playerCount] =
-    await Promise.all([
-      prisma.match.findMany({
-        where: { status: "LIVE" },
+  const me = await getCurrentPlayer();
+
+  // "Your matches": matches where the signed-in player is on the roster, OR
+  // (legacy fallback) plays for one of the two teams. We intentionally show
+  // LIVE first, then SCHEDULED, then the latest few COMPLETED so the user
+  // lands on relevant matches first.
+  const myMatchesPromise = me
+    ? prisma.match.findMany({
+        where: {
+          OR: [
+            { matchPlayers: { some: { playerId: me.id } } },
+            ...(me.teamId
+              ? [{ team1Id: me.teamId }, { team2Id: me.teamId }]
+              : []),
+          ],
+        },
         include: {
           team1: true,
           team2: true,
           innings: { include: { battingTeam: true } },
         },
-        orderBy: { matchDate: "desc" },
-      }),
-      prisma.match.findMany({
-        where: { status: "COMPLETED" },
-        include: {
-          team1: true,
-          team2: true,
-          innings: { include: { battingTeam: true } },
-        },
-        orderBy: { matchDate: "desc" },
+        orderBy: [{ status: "asc" }, { matchDate: "desc" }],
         take: 6,
-      }),
-      prisma.match.findMany({
-        where: { status: "SCHEDULED" },
-        include: {
-          team1: true,
-          team2: true,
-          innings: { include: { battingTeam: true } },
-        },
-        orderBy: { matchDate: "asc" },
-        take: 6,
-      }),
-      prisma.team.count(),
-      prisma.player.count(),
-    ]);
+      })
+    : Promise.resolve([] as any[]);
+
+  const [
+    liveMatches,
+    recentMatches,
+    upcomingMatches,
+    teamCount,
+    playerCount,
+    myMatchesAll,
+  ] = await Promise.all([
+    prisma.match.findMany({
+      where: { status: "LIVE" },
+      include: {
+        team1: true,
+        team2: true,
+        innings: { include: { battingTeam: true } },
+      },
+      orderBy: { matchDate: "desc" },
+    }),
+    prisma.match.findMany({
+      where: { status: "COMPLETED" },
+      include: {
+        team1: true,
+        team2: true,
+        innings: { include: { battingTeam: true } },
+      },
+      orderBy: { matchDate: "desc" },
+      take: 2,
+    }),
+    prisma.match.findMany({
+      where: { status: "SCHEDULED" },
+      include: {
+        team1: true,
+        team2: true,
+        innings: { include: { battingTeam: true } },
+      },
+      orderBy: { matchDate: "asc" },
+      take: 6,
+    }),
+    prisma.team.count(),
+    prisma.player.count(),
+    myMatchesPromise,
+  ]);
+
+  // Order "Your matches": LIVE → SCHEDULED → COMPLETED (newest first), and
+  // dedupe so a match listed in "Your matches" doesn't also appear below.
+  const myMatches = (myMatchesAll as any[]).slice().sort((a, b) => {
+    const order = (s: string) =>
+      s === "LIVE" ? 0 : s === "SCHEDULED" ? 1 : 2;
+    const o = order(a.status) - order(b.status);
+    if (o !== 0) return o;
+    return new Date(b.matchDate).getTime() - new Date(a.matchDate).getTime();
+  });
+  const myMatchIds = new Set(myMatches.map((m) => m.id));
+
+  const liveMatchesFiltered = liveMatches.filter((m) => !myMatchIds.has(m.id));
+  const upcomingMatchesFiltered = upcomingMatches.filter(
+    (m) => !myMatchIds.has(m.id),
+  );
+
+  const hasLive = liveMatches.length > 0 || myMatches.some((m) => m.status === "LIVE");
 
   return (
     <div className="space-y-12">
-      {liveMatches.length > 0 && <AutoRefresher intervalMs={8000} />}
+      {/*
+       * Live scores need to feel snappy; refresh every 4s while any LIVE
+       * match is on the page (whether it's in "Your matches" or "Live now").
+       */}
+      {hasLive && <AutoRefresher intervalMs={4000} />}
 
-      <Hero teamCount={teamCount} playerCount={playerCount} liveCount={liveMatches.length} />
+      <Hero
+        teamCount={teamCount}
+        playerCount={playerCount}
+        liveCount={liveMatches.length}
+      />
 
-      {liveMatches.length > 0 && (
+      {me && myMatches.length > 0 && (
         <Section
-          title="Live now"
-          subtitle="Matches happening at this moment"
+          title={`Your matches`}
+          subtitle={`Hi ${me.name.split(" ")[0]} — matches you're playing in`}
           accent
         >
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {liveMatches.map((m) => (
+            {myMatches.slice(0, 6).map((m: any) => (
               <MatchCard key={m.id} {...m} />
             ))}
           </div>
         </Section>
       )}
 
-      {upcomingMatches.length > 0 && (
+      {liveMatchesFiltered.length > 0 && (
+        <Section
+          title="Live now"
+          subtitle="Matches happening at this moment"
+          accent
+        >
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {liveMatchesFiltered.map((m) => (
+              <MatchCard key={m.id} {...m} />
+            ))}
+          </div>
+        </Section>
+      )}
+
+      {upcomingMatchesFiltered.length > 0 && (
         <Section title="Upcoming" subtitle="Scheduled fixtures">
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {upcomingMatches.map((m) => (
+            {upcomingMatchesFiltered.map((m) => (
               <MatchCard key={m.id} {...m} />
             ))}
           </div>
@@ -74,7 +148,7 @@ export default async function HomePage() {
 
       <Section
         title="Recent results"
-        subtitle="What just happened on the pitch"
+        subtitle="The two latest completed matches"
         actionHref="/matches"
         actionLabel="View all matches"
       >
@@ -112,10 +186,10 @@ function Hero({
           Hitachi Internal League
         </div>
         <h1 className="text-4xl font-black tracking-tight sm:text-5xl lg:text-6xl">
-          Cricket, scored.
+          Cricket, Score Card.
           <br />
           <span className="bg-gradient-to-r from-hitachi-light to-white bg-clip-text text-transparent">
-            Players, celebrated.
+            Players Stats.
           </span>
         </h1>
         <p className="mt-5 max-w-xl text-base text-white/80 sm:text-lg">

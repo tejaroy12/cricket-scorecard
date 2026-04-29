@@ -58,12 +58,15 @@ model Player {
 // Per-match roster: which players are on side 1 vs side 2 for this match.
 // Supercedes Player.teamId for the purposes of selecting batters/bowlers.
 model MatchPlayer {
-  id        String  @id @default(cuid())
-  matchId   String
-  match     Match   @relation(fields: [matchId], references: [id], onDelete: Cascade)
-  playerId  String
-  player    Player  @relation(fields: [playerId], references: [id], onDelete: Cascade)
-  side      Int     // 1 or 2
+  id              String  @id @default(cuid())
+  matchId         String
+  match           Match   @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  playerId        String
+  player          Player  @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  side            Int     // 1 or 2
+  isCaptain       Boolean @default(false)
+  isViceCaptain   Boolean @default(false)
+  isWicketKeeper  Boolean @default(false)
 
   @@unique([matchId, playerId])
   @@index([matchId, side])
@@ -103,7 +106,7 @@ model Innings {
   id             String   @id @default(cuid())
   matchId        String
   match          Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
-  inningsNumber  Int      // 1 or 2
+  inningsNumber  Int      // 1 or 2 for the main match; 3 / 4 for super over
   battingTeamId  String
   battingTeam    Team     @relation("BattingTeam", fields: [battingTeamId], references: [id])
   bowlingTeamId  String
@@ -114,6 +117,13 @@ model Innings {
   totalBalls     Int      @default(0) // legal balls bowled
   extras         Int      @default(0)
   isClosed       Boolean  @default(false)
+
+  // Super-over support. When set, these override match.oversPerSide and the
+  // standard team-size all-out rule for this innings only (super over uses
+  // 1 over / 2 wickets).
+  isSuperOver    Boolean  @default(false)
+  maxOvers       Int?
+  maxWickets     Int?
 
   balls          Ball[]
   battingEntries BattingEntry[]

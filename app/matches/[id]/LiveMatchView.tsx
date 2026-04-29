@@ -38,6 +38,7 @@ type Ball = {
   extras: number;
   extraType: string | null;
   isWicket: boolean;
+  isFreeHit: boolean;
 };
 type Innings = {
   id: string;
@@ -283,9 +284,33 @@ function CurrentInningsView({ innings }: { innings: Innings }) {
   const nonStriker = innings.battingEntries.find((b) => b.isOnCrease && !b.isStriker);
   const bowler = innings.bowlingEntries.slice().sort((a, b) => b.balls - a.balls)[0];
 
+  const lastBall = innings.balls[0];
+  const nextBallIsFreeHit = !!(
+    lastBall &&
+    (lastBall.extraType === "NO_BALL" ||
+      (lastBall.isFreeHit && lastBall.extraType === "WIDE"))
+  );
+
   return (
     <div className="grid gap-4 lg:grid-cols-3">
       <div className="card p-5 lg:col-span-2">
+        {nextBallIsFreeHit && (
+          <div className="mb-3 flex items-center gap-2 rounded-lg bg-amber-100 px-3 py-2 ring-1 ring-amber-300">
+            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-amber-500 text-white">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+              </svg>
+            </span>
+            <div className="flex-1 text-sm">
+              <span className="font-black uppercase tracking-widest text-amber-900">
+                Free hit
+              </span>
+              <span className="ml-2 text-xs font-medium text-amber-800">
+                Run-out is the only way the batter can be dismissed.
+              </span>
+            </div>
+          </div>
+        )}
         <h2 className="text-lg font-bold text-slate-900">Current batting</h2>
         <table className="mt-3 w-full text-left text-sm">
           <thead className="text-xs text-slate-500">
@@ -378,8 +403,20 @@ function BallChip({ ball }: { ball: Ball }) {
     cls = "bg-red-600 text-white";
   }
   return (
-    <span className={`inline-flex h-9 min-w-9 items-center justify-center rounded-md px-2 text-sm font-bold ${cls}`}>
-      {label}
+    <span className="relative inline-flex">
+      <span
+        className={`inline-flex h-9 min-w-9 items-center justify-center rounded-md px-2 text-sm font-bold ${cls}`}
+      >
+        {label}
+      </span>
+      {ball.isFreeHit && (
+        <span
+          className="absolute -right-1.5 -top-1 inline-flex h-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[9px] font-black uppercase tracking-wide text-white ring-2 ring-white"
+          title="Free hit"
+        >
+          FH
+        </span>
+      )}
     </span>
   );
 }

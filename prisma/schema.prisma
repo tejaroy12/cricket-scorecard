@@ -167,6 +167,10 @@ model Ball {
   // to render scorecard outs like "c Sharma b Khan" or "run out (Sharma)".
   fielderId    String?
   fielder      Player?  @relation("Fielder", fields: [fielderId], references: [id])
+  // Free hit flag for the delivery itself. A ball is a free hit when the
+  // previous delivery was a no-ball, with the rule carrying over wides
+  // until the next legal / no-ball delivery is bowled.
+  isFreeHit    Boolean  @default(false)
 
   commentary   String?
   createdAt    DateTime @default(now())

@@ -82,6 +82,25 @@ export async function applyBall(input: BallInput) {
     const overNumber = Math.floor(innings.totalBalls / 6);
     const ballInOver = (innings.totalBalls % 6) + 1;
 
+    // Free-hit calculation: any ball directly after a no-ball is a free
+    // hit. If that subsequent ball is itself a wide, the free hit
+    // carries to the next delivery — we keep walking back until we see
+    // a non-wide ball.
+    const isFreeHit = !!(
+      lastBall &&
+      (lastBall.extraType === "NO_BALL" ||
+        ((lastBall as any).isFreeHit && lastBall.extraType === "WIDE"))
+    );
+
+    // On a free hit, the only legal dismissal is RUN_OUT (and a few
+    // edge cases like obstructing the field which we don't model).
+    // Reject anything else so the scorecard can't go inconsistent.
+    if (isFreeHit && input.isWicket && input.wicketType !== "RUN_OUT") {
+      throw new Error(
+        "Only run-outs are allowed on a free hit — the batter can't be bowled, caught, LBW, stumped or hit-wicket here.",
+      );
+    }
+
     // Total runs from this delivery
     const totalRunsThisBall = input.runs + input.extras;
 
@@ -103,6 +122,7 @@ export async function applyBall(input: BallInput) {
         wicketType: input.wicketType,
         dismissedPlayerId: input.dismissedPlayerId ?? null,
         fielderId: input.fielderId ?? null,
+        isFreeHit,
         commentary: input.commentary ?? null,
       },
     });

@@ -47,6 +47,7 @@ type Ball = {
   isLegal: boolean;
   isWicket: boolean;
   wicketType: string | null;
+  isFreeHit: boolean;
   striker: Player;
   bowler: Player;
   dismissedPlayer: Player | null;
@@ -586,6 +587,15 @@ function ScoringPanel({
   const striker = onCrease.find((b) => b.isStriker);
   const nonStriker = onCrease.find((b) => !b.isStriker);
 
+  // The next delivery is a free hit if the most recent ball was a
+  // no-ball, or it was a wide that itself inherited free hit status.
+  const lastBall = innings.balls[0];
+  const nextBallIsFreeHit = !!(
+    lastBall &&
+    (lastBall.extraType === "NO_BALL" ||
+      (lastBall.isFreeHit && lastBall.extraType === "WIDE"))
+  );
+
   // Trust the server-pinned currentBowlerId. Fall back to the bowler of
   // the most recent ball, then to "most balls bowled" as a last resort
   // (only matters for innings created before the column existed).
@@ -753,6 +763,7 @@ function ScoringPanel({
               dismissedPlayerIds={innings.battingEntries
                 .filter((b) => b.isOut)
                 .map((b) => b.playerId)}
+              freeHit={nextBallIsFreeHit}
               busy={busy}
               onBall={onBall}
               onUndo={onUndo}
@@ -998,6 +1009,7 @@ function BallEntry({
   battingTeamPlayers,
   bowlingTeamPlayers,
   dismissedPlayerIds,
+  freeHit,
   busy,
   onBall,
   onUndo,
@@ -1008,6 +1020,7 @@ function BallEntry({
   battingTeamPlayers: Player[];
   bowlingTeamPlayers: Player[];
   dismissedPlayerIds: string[];
+  freeHit: boolean;
   busy: boolean;
   onBall: (b: any) => void;
   onUndo: () => void;
@@ -1020,6 +1033,15 @@ function BallEntry({
   const [fielderId, setFielderId] = useState<string>("");
   const [newBatterId, setNewBatterId] = useState<string>("");
   const [warning, setWarning] = useState<string | null>(null);
+
+  // On a free hit only run-outs are valid. Force the wicket type to
+  // RUN_OUT whenever the user opens the wicket panel during a free
+  // hit so the dropdown can't be left on, say, BOWLED.
+  useEffect(() => {
+    if (freeHit && showWicket && wicketType !== "RUN_OUT") {
+      setWicketType("RUN_OUT");
+    }
+  }, [freeHit, showWicket, wicketType]);
 
   function reset() {
     setExtraType("");
@@ -1082,6 +1104,23 @@ function BallEntry({
 
   return (
     <div>
+      {freeHit && (
+        <div className="mb-3 flex items-center gap-2 rounded-lg bg-amber-100 px-3 py-2 ring-1 ring-amber-300">
+          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-amber-500 text-white">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+            </svg>
+          </span>
+          <div className="flex-1 text-sm">
+            <span className="font-black uppercase tracking-widest text-amber-900">
+              Free hit
+            </span>
+            <span className="ml-2 text-xs font-medium text-amber-800">
+              Batter can only be dismissed by run-out.
+            </span>
+          </div>
+        </div>
+      )}
       <div className="mb-3 flex items-center justify-between text-xs text-slate-600">
         <div>
           On strike: <b className="text-slate-900">{striker?.name ?? "?"}</b> ·{" "}
@@ -1171,12 +1210,18 @@ function BallEntry({
               <div>
                 <label className="label">Type</label>
                 <select className="input" value={wicketType} onChange={(e) => setWicketType(e.target.value)}>
-                  <option value="BOWLED">Bowled</option>
-                  <option value="CAUGHT">Caught</option>
-                  <option value="LBW">LBW</option>
-                  <option value="RUN_OUT">Run out</option>
-                  <option value="STUMPED">Stumped</option>
-                  <option value="HIT_WICKET">Hit wicket</option>
+                  {freeHit ? (
+                    <option value="RUN_OUT">Run out (only)</option>
+                  ) : (
+                    <>
+                      <option value="BOWLED">Bowled</option>
+                      <option value="CAUGHT">Caught</option>
+                      <option value="LBW">LBW</option>
+                      <option value="RUN_OUT">Run out</option>
+                      <option value="STUMPED">Stumped</option>
+                      <option value="HIT_WICKET">Hit wicket</option>
+                    </>
+                  )}
                 </select>
               </div>
               <div>
@@ -1301,8 +1346,20 @@ function BallChip({ ball }: { ball: Ball }) {
   }
 
   return (
-    <span className={`inline-flex h-9 min-w-9 items-center justify-center rounded-md px-2 text-sm font-bold ${cls}`}>
-      {label}
+    <span className="relative inline-flex">
+      <span
+        className={`inline-flex h-9 min-w-9 items-center justify-center rounded-md px-2 text-sm font-bold ${cls}`}
+      >
+        {label}
+      </span>
+      {ball.isFreeHit && (
+        <span
+          className="absolute -right-1.5 -top-1 inline-flex h-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[9px] font-black uppercase tracking-wide text-white ring-2 ring-white"
+          title="Free hit"
+        >
+          FH
+        </span>
+      )}
     </span>
   );
 }

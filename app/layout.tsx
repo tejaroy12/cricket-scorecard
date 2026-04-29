@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { isAuthenticated } from "@/lib/auth";
+import { getCurrentPlayer } from "@/lib/playerSession";
 import { SiteHeader } from "@/components/SiteHeader";
 
 export const metadata: Metadata = {
@@ -9,17 +10,29 @@ export const metadata: Metadata = {
     "Internal cricket platform for Hitachi — live scoring, player profiles, team standings and match history.",
 };
 
-export default function RootLayout({
+export const dynamic = "force-dynamic";
+
+export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
   const loggedIn = isAuthenticated();
+  const me = await getCurrentPlayer();
+  const currentPlayer = me
+    ? {
+        id: me.id,
+        name: me.name,
+        phone: me.phone,
+        team: me.team ? { id: me.team.id, name: me.team.name } : null,
+        profileUrl: `/players/${me.id}`,
+      }
+    : null;
 
   return (
     <html lang="en">
       <body>
-        <SiteHeader loggedIn={loggedIn} />
+        <SiteHeader loggedIn={loggedIn} currentPlayer={currentPlayer} />
 
         <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
           {children}

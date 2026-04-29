@@ -126,6 +126,12 @@ model Innings {
   maxOvers       Int?
   maxWickets     Int?
 
+  // The bowler nominated to bowl the next ball. Set when openers are
+  // chosen and updated whenever the admin switches the bowler (typically
+  // at the start of a new over). All ball records use this id, so
+  // figures stick to the right bowler regardless of past balls.
+  currentBowlerId String?
+
   balls          Ball[]
   battingEntries BattingEntry[]
   bowlingEntries BowlingEntry[]

@@ -65,6 +65,7 @@ type Innings = {
   isSuperOver?: boolean;
   maxOvers?: number | null;
   maxWickets?: number | null;
+  currentBowlerId?: string | null;
   oversText: string;
   runRate: number;
   battingEntries: BattingEntry[];
@@ -536,7 +537,40 @@ function ScoringPanel({
   const striker = onCrease.find((b) => b.isStriker);
   const nonStriker = onCrease.find((b) => !b.isStriker);
 
-  const currentBowler = innings.bowlingEntries.slice().sort((a, b) => b.balls - a.balls)[0];
+  // Trust the server-pinned currentBowlerId. Fall back to the bowler of
+  // the most recent ball, then to "most balls bowled" as a last resort
+  // (only matters for innings created before the column existed).
+  const currentBowler = (() => {
+    if (innings.currentBowlerId) {
+      const hit = innings.bowlingEntries.find(
+        (b) => b.playerId === innings.currentBowlerId,
+      );
+      if (hit) return hit;
+    }
+    const lastBall = innings.balls[0];
+    if (lastBall) {
+      const hit = innings.bowlingEntries.find(
+        (b) => b.playerId === lastBall.bowler.id,
+      );
+      if (hit) return hit;
+    }
+    return innings.bowlingEntries
+      .slice()
+      .sort((a, b) => b.balls - a.balls)[0];
+  })();
+
+  // Detect "over just ended → admin must pick a new bowler" so we can
+  // block ball entry instead of silently letting the same bowler keep
+  // accumulating runs into the next over.
+  const lastLegalBall = innings.balls.find((b) => b.isLegal) ?? null;
+  const previousOverBowlerId = lastLegalBall?.bowler.id ?? null;
+  const atOverBoundary =
+    innings.totalBalls > 0 && innings.totalBalls % 6 === 0;
+  const needsNewOverBowler =
+    atOverBoundary &&
+    !!previousOverBowlerId &&
+    (currentBowler?.playerId ?? innings.currentBowlerId ?? null) ===
+      previousOverBowlerId;
 
   // End of innings: closed flag from server, all out (team-size aware), all overs bowled,
   // OR (2nd innings) chase target reached. Super-over innings honour their
@@ -609,14 +643,25 @@ function ScoringPanel({
         />
       ) : (
         <>
-          <BowlerSwitcher
-            bowlers={bowlingTeamPlayers}
-            current={currentBowler?.playerId}
-            busy={busy}
-            onChange={onSetBowler}
-          />
+          {needsNewOverBowler && !inningsOver ? (
+            <NewOverBowlerDialog
+              bowlers={bowlingTeamPlayers}
+              previousBowlerId={previousOverBowlerId}
+              busy={busy}
+              onSubmit={onSetBowler}
+            />
+          ) : (
+            <BowlerSwitcher
+              bowlers={bowlingTeamPlayers}
+              current={currentBowler?.playerId}
+              previousBowlerId={previousOverBowlerId}
+              atOverBoundary={atOverBoundary}
+              busy={busy}
+              onChange={onSetBowler}
+            />
+          )}
 
-          {!inningsOver ? (
+          {!inningsOver && !needsNewOverBowler ? (
             <BallEntry
               striker={striker?.player}
               nonStriker={nonStriker?.player}
@@ -630,12 +675,12 @@ function ScoringPanel({
               onBall={onBall}
               onUndo={onUndo}
             />
-          ) : (
+          ) : inningsOver ? (
             <div className="rounded-lg bg-emerald-50 p-4 text-sm text-emerald-800 ring-1 ring-emerald-100">
               Innings complete: {innings.totalRuns}/{innings.totalWickets} in {innings.oversText} overs
               {allOut ? " (all out)" : maxOversReached ? " (overs complete)" : ""}.
             </div>
-          )}
+          ) : null}
 
           <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-4">
             {isFirstInnings && (
@@ -730,23 +775,36 @@ function OpenersForm({
 function BowlerSwitcher({
   bowlers,
   current,
+  previousBowlerId,
+  atOverBoundary,
   busy,
   onChange,
 }: {
   bowlers: Player[];
   current: string | undefined;
+  previousBowlerId: string | null;
+  atOverBoundary: boolean;
   busy: boolean;
   onChange: (id: string) => void;
 }) {
   const [val, setVal] = useState(current || "");
   useEffect(() => setVal(current || ""), [current]);
+  // At an over boundary, the previous bowler can't bowl again. Hide them
+  // from the dropdown so the admin can't accidentally pick them.
+  const options = bowlers.filter(
+    (p) => !(atOverBoundary && previousBowlerId && p.id === previousBowlerId),
+  );
   return (
     <div className="flex flex-wrap items-end gap-3">
       <div className="flex-1 min-w-[200px]">
         <label className="label">Current bowler</label>
         <select className="input" value={val} onChange={(e) => setVal(e.target.value)}>
           <option value="">Select…</option>
-          {bowlers.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          {options.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
+          ))}
         </select>
       </div>
       <button
@@ -756,6 +814,82 @@ function BowlerSwitcher({
       >
         Set bowler
       </button>
+    </div>
+  );
+}
+
+/**
+ * Blocking dialog rendered when the previous over has just finished and
+ * the admin hasn't picked a new bowler. Ball entry is hidden until they
+ * confirm someone — the picked bowler can't be the same as last over's.
+ */
+function NewOverBowlerDialog({
+  bowlers,
+  previousBowlerId,
+  busy,
+  onSubmit,
+}: {
+  bowlers: Player[];
+  previousBowlerId: string | null;
+  busy: boolean;
+  onSubmit: (bowlerId: string) => void;
+}) {
+  const [val, setVal] = useState("");
+  const candidates = bowlers.filter((p) => p.id !== previousBowlerId);
+  const previousBowler = bowlers.find((p) => p.id === previousBowlerId);
+
+  return (
+    <div className="rounded-xl bg-sky-50 p-5 ring-1 ring-sky-200">
+      <div className="flex items-center gap-2">
+        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-sky-200 text-sky-900">
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <circle cx="12" cy="12" r="9" />
+            <path d="M12 7v5l3 2" />
+          </svg>
+        </span>
+        <div>
+          <div className="text-base font-bold text-sky-900">
+            Over complete — pick the next bowler
+          </div>
+          <div className="text-xs text-sky-800">
+            {previousBowler
+              ? `${previousBowler.name} just finished an over and can't bowl back-to-back.`
+              : "Pick the next bowler to keep the innings going."}
+          </div>
+        </div>
+      </div>
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        <select
+          className="input flex-1 min-w-[200px]"
+          value={val}
+          onChange={(e) => setVal(e.target.value)}
+        >
+          <option value="">Select next bowler…</option>
+          {candidates.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+              {p.jerseyNumber != null ? ` · #${p.jerseyNumber}` : ""}
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          disabled={!val || busy}
+          onClick={() => onSubmit(val)}
+          className="btn-primary"
+        >
+          {busy ? <Spinner label="Setting bowler…" /> : "Hand him the ball"}
+        </button>
+      </div>
     </div>
   );
 }

@@ -82,6 +82,12 @@ export async function POST(
         data: { inningsId: params.id, playerId: bowlerId },
       });
     }
+    // Pin the current bowler so subsequent ball entries are attributed to
+    // them until the admin explicitly changes who is bowling.
+    await tx.innings.update({
+      where: { id: params.id },
+      data: { currentBowlerId: bowlerId },
+    });
   });
 
   return NextResponse.json({ ok: true });

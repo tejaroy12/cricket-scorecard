@@ -28,16 +28,31 @@ export async function POST(
     );
   }
 
-  const bowlerId =
-    body.bowlerId ||
-    (
-      await prisma.bowlingEntry.findFirst({
-        where: { inningsId: params.id },
-        orderBy: { balls: "desc" }, // last bowler with most balls
-      })
-    )?.playerId;
+  // Always trust the explicitly-pinned current bowler. The previous
+  // implementation guessed the bowler by "most balls bowled" which kept
+  // attributing every new over to the original bowler.
+  const bowlerId = body.bowlerId || innings.currentBowlerId;
   if (!bowlerId) {
     return NextResponse.json({ error: "Set the bowler" }, { status: 400 });
+  }
+
+  // Block scoring when the previous over has just ended and the admin
+  // hasn't yet picked a new bowler — same bowler can't bowl back-to-back
+  // overs.
+  const lastLegal = await prisma.ball.findFirst({
+    where: { inningsId: params.id, isLegal: true },
+    orderBy: { sequence: "desc" },
+  });
+  const atOverBoundary =
+    innings.totalBalls > 0 && innings.totalBalls % 6 === 0;
+  if (atOverBoundary && lastLegal && lastLegal.bowlerId === bowlerId) {
+    return NextResponse.json(
+      {
+        error:
+          "Over complete — pick a new bowler before scoring the next ball.",
+      },
+      { status: 400 },
+    );
   }
 
   try {

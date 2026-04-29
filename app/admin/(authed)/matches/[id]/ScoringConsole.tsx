@@ -194,6 +194,14 @@ export default function ScoringConsole({ initial }: { initial: MatchState }) {
           headers: { "Content-Type": "application/json" },
           body: body ? JSON.stringify(body) : undefined,
         });
+        if (res.status === 401) {
+          // Session expired or someone shared a scoring link — bounce
+          // them through the admin login screen so they can re-auth.
+          window.location.href =
+            "/admin/login?next=" +
+            encodeURIComponent(window.location.pathname);
+          return;
+        }
         const j = await res.json().catch(() => ({}));
         if (!res.ok) {
           throw new Error(j.error || "Request failed");

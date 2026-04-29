@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
 export default function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -25,7 +26,11 @@ export default function LoginForm() {
       setError(data?.error || "Invalid credentials");
       return;
     }
-    router.push("/admin");
+    // If the user landed here from a protected admin page, send them
+    // straight back to it after signing in.
+    const next = searchParams?.get("next");
+    const safeNext = next && next.startsWith("/admin") ? next : "/admin";
+    router.push(safeNext);
     router.refresh();
   }
 

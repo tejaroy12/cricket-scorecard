@@ -43,18 +43,16 @@ export function getCurrentAdmin(): string | null {
 }
 
 /**
- * Admin authentication is currently DISABLED for everything except the
- * password-confirm dialog on destructive actions (e.g. deleting a match).
+ * Whether the current request belongs to a signed-in admin.
  *
- * Anyone can open `/admin`, edit teams/players, and score matches. The
- * delete-match endpoint still asks for `ADMIN_USERNAME` / `ADMIN_PASSWORD`
- * inside its own dialog, so audit-worthy actions stay gated.
- *
- * To turn auth back on, replace the body with:
- *   return getCurrentAdmin() !== null;
+ * Used both server-side (layout redirects) and from API routes that
+ * mutate data (scoring a ball, completing a match, editing rosters,
+ * etc.). Public read-only endpoints — `/api/matches/[id]/state`,
+ * `/api/players/lookup` and the like — intentionally don't call this,
+ * so spectators still see live scores without logging in.
  */
 export function isAuthenticated(): boolean {
-  return true;
+  return getCurrentAdmin() !== null;
 }
 
 export const SESSION_COOKIE_NAME = SESSION_COOKIE;

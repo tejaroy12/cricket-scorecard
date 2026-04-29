@@ -8,10 +8,12 @@ import {
 /**
  * Public "claim my profile" lookup.
  *
- * Body: { name: string; phone: string }
+ * Body: { phone: string; name?: string }
  *
- * Matches a Player by phone (last 10 digits) AND name (case-insensitive,
- * partial).  On success, sets a 30-day cookie pinning this browser to that
+ * Matches a Player by phone (last 10 digits). If the same phone is used by
+ * more than one player (rare — e.g. shared family number) we narrow with
+ * the optional `name` token-match; otherwise we just take the most recent
+ * record. On success, sets a 30-day cookie pinning this browser to that
  * player so subsequent "Profile" clicks go straight to /players/<id>.
  */
 export async function POST(req: NextRequest) {
@@ -22,11 +24,10 @@ export async function POST(req: NextRequest) {
   const rawPhone = String(body.phone || "").trim();
   const phone = normalizePhone(rawPhone);
 
-  if (!name || phone.length < 10) {
+  if (phone.length < 10) {
     return NextResponse.json(
       {
-        error:
-          "Please enter your full name and a 10-digit phone number to look up your profile.",
+        error: "Please enter a valid 10-digit phone number.",
       },
       { status: 400 },
     );
@@ -39,32 +40,34 @@ export async function POST(req: NextRequest) {
     include: { team: { select: { id: true, name: true } } },
   });
 
-  const matches = candidates.filter((p) => {
-    const stored = normalizePhone(p.phone || "");
-    if (stored !== phone) return false;
-    // Loose name compare: each input token must appear somewhere in the
-    // stored name (so "Virat" matches "Virat Kumar" and vice versa).
-    const storedName = p.name.toLowerCase();
-    const inputTokens = name
-      .toLowerCase()
-      .split(/\s+/)
-      .filter(Boolean);
-    return inputTokens.every((t) => storedName.includes(t));
-  });
+  let matches = candidates.filter(
+    (p) => normalizePhone(p.phone || "") === phone,
+  );
+
+  // If the same phone is on multiple records and the caller provided a
+  // name hint, narrow further. Otherwise we always pick the latest match.
+  if (matches.length > 1 && name) {
+    const tokens = name.toLowerCase().split(/\s+/).filter(Boolean);
+    const narrowed = matches.filter((p) => {
+      const storedName = p.name.toLowerCase();
+      return tokens.every((t) => storedName.includes(t));
+    });
+    if (narrowed.length > 0) matches = narrowed;
+  }
 
   if (matches.length === 0) {
     return NextResponse.json(
       {
         error:
-          "We couldn't find a player with that name and phone. If you're new, register first to claim your profile.",
+          "We couldn't find a player with that phone number. If you're new, register first to claim your profile.",
         registerUrl: "/register",
       },
       { status: 404 },
     );
   }
 
-  // Multiple matches (e.g. two siblings sharing a phone with similar names)
-  // — pick the most recent active player as a sensible default.
+  // Multiple matches (e.g. two siblings sharing a phone) — pick the most
+  // recently created record as a sensible default.
   const player = matches.sort(
     (a, b) => b.createdAt.getTime() - a.createdAt.getTime(),
   )[0];

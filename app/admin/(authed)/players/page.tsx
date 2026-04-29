@@ -1,8 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
-import Link from "next/link";
 import { PlayersTable } from "./PlayersTable";
+import { AddPlayerForm, type AddPlayerInput } from "./AddPlayerForm";
 
 export const dynamic = "force-dynamic";
 
@@ -29,41 +29,44 @@ function readFlash(): { message: string; kind: "ok" | "err" } | null {
   }
 }
 
-async function createPlayer(formData: FormData) {
+async function createPlayer(
+  input: AddPlayerInput,
+): Promise<{ ok: boolean; error?: string }> {
   "use server";
-  const { isAuthenticated } = await import("@/lib/auth");
-  if (!isAuthenticated()) throw new Error("Unauthorized");
+  const name = input.name.trim();
+  const phone = input.phone.trim();
+  const phoneDigits = phone.replace(/\D/g, "");
 
-  const name = String(formData.get("name") || "").trim();
-  const teamIdRaw = String(formData.get("teamId") || "").trim();
-  const teamId = teamIdRaw || null;
-  const role = String(formData.get("role") || "BATTER");
-  const battingStyle = String(formData.get("battingStyle") || "RHB");
-  const bowlingStyle = String(formData.get("bowlingStyle") || "").trim();
-  const phone = String(formData.get("phone") || "").trim();
-  const jerseyNumberRaw = String(formData.get("jerseyNumber") || "").trim();
-  const jerseyNumber = jerseyNumberRaw ? Number(jerseyNumberRaw) : null;
+  if (!name) return { ok: false, error: "Player name is required." };
+  if (phoneDigits.length < 10)
+    return { ok: false, error: "Phone number must be at least 10 digits." };
 
-  if (!name) {
-    setFlash("Player name is required.", "err");
-    return;
+  const teamId = input.teamId || null;
+  const jersey =
+    input.jerseyNumber !== null && Number.isFinite(input.jerseyNumber)
+      ? Math.max(0, Math.min(999, Math.trunc(input.jerseyNumber)))
+      : null;
+
+  try {
+    await prisma.player.create({
+      data: {
+        name,
+        teamId,
+        role: input.role || "BATTER",
+        battingStyle: input.battingStyle || "RHB",
+        bowlingStyle: input.bowlingStyle?.trim() || null,
+        phone,
+        jerseyNumber: jersey,
+      },
+    });
+  } catch (e: any) {
+    return { ok: false, error: e?.message ?? "Could not add player." };
   }
 
-  await prisma.player.create({
-    data: {
-      name,
-      teamId,
-      role,
-      battingStyle,
-      bowlingStyle: bowlingStyle || null,
-      phone: phone || null,
-      jerseyNumber: jerseyNumber && Number.isFinite(jerseyNumber) ? jerseyNumber : null,
-    },
-  });
-  setFlash(`Added "${name}".`);
   revalidatePath("/admin/players");
   revalidatePath("/players");
   if (teamId) revalidatePath(`/teams/${teamId}`);
+  return { ok: true };
 }
 
 async function deletePlayer(formData: FormData) {
@@ -138,66 +141,10 @@ export default async function AdminPlayersPage() {
 
       {flash && <FlashBanner flash={flash} />}
 
-      <form action={createPlayer} className="card space-y-4 p-5">
-        <div>
-          <h2 className="text-base font-semibold text-slate-900">Add player</h2>
-          <p className="text-xs text-slate-500">
-            Add anyone who might play. A default team is optional — you pick
-            who plays for which side when creating each match.
-          </p>
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          <div>
-            <label className="label">Full name</label>
-            <input className="input" name="name" required placeholder="Virat Kumar" />
-          </div>
-          <div>
-            <label className="label">Default team (optional)</label>
-            <select className="input" name="teamId" defaultValue="">
-              <option value="">— Free agent —</option>
-              {teams.map((t) => (
-                <option key={t.id} value={t.id}>{t.name}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="label">Role</label>
-            <select className="input" name="role" defaultValue="BATTER">
-              <option value="BATTER">Batter</option>
-              <option value="BOWLER">Bowler</option>
-              <option value="ALL_ROUNDER">All-rounder</option>
-              <option value="WICKET_KEEPER">Wicket-keeper</option>
-            </select>
-          </div>
-          <div>
-            <label className="label">Batting style</label>
-            <select className="input" name="battingStyle" defaultValue="RHB">
-              <option value="RHB">Right-hand bat</option>
-              <option value="LHB">Left-hand bat</option>
-            </select>
-          </div>
-          <div>
-            <label className="label">Bowling style</label>
-            <input className="input" name="bowlingStyle" placeholder="e.g. Right-arm fast" />
-          </div>
-          <div>
-            <label className="label">Jersey #</label>
-            <input className="input" name="jerseyNumber" type="number" min={0} max={999} />
-          </div>
-          <div>
-            <label className="label">Phone (optional)</label>
-            <input
-              className="input"
-              name="phone"
-              type="tel"
-              placeholder="e.g. 9876543210"
-              inputMode="numeric"
-              pattern="[0-9 +()-]*"
-            />
-          </div>
-        </div>
-        <button type="submit" className="btn-primary">Add player</button>
-      </form>
+      <AddPlayerForm
+        teams={teams.map((t) => ({ id: t.id, name: t.name }))}
+        action={createPlayer}
+      />
 
       <PlayersTable
         players={players.map((p) => ({

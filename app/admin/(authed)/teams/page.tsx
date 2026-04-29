@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
+import { AddTeamForm, type AddTeamInput } from "./AddTeamForm";
 
 export const dynamic = "force-dynamic";
 
@@ -27,18 +28,16 @@ function readFlash(): { message: string; kind: "ok" | "err" } | null {
   }
 }
 
-async function createTeam(formData: FormData) {
+async function createTeam(
+  input: AddTeamInput,
+): Promise<{ ok: boolean; error?: string }> {
   "use server";
-  const { isAuthenticated } = await import("@/lib/auth");
-  if (!isAuthenticated()) throw new Error("Unauthorized");
+  const name = input.name.trim();
+  if (!name) return { ok: false, error: "Team name is required." };
 
-  const name = String(formData.get("name") || "").trim();
-  const shortName = String(formData.get("shortName") || "").trim();
-  const logoUrl = String(formData.get("logoUrl") || "").trim();
-  if (!name) {
-    setFlash("Team name is required.", "err");
-    return;
-  }
+  const shortName = input.shortName.trim();
+  const logoUrl = input.logoUrl.trim();
+
   try {
     await prisma.team.create({
       data: {
@@ -47,18 +46,20 @@ async function createTeam(formData: FormData) {
         logoUrl: logoUrl || null,
       },
     });
-    setFlash(`Created team "${name}".`);
   } catch (e: any) {
-    setFlash(
-      e?.code === "P2002"
-        ? `A team named "${name}" already exists.`
-        : `Could not create team: ${e?.message ?? "unknown error"}`,
-      "err",
-    );
+    return {
+      ok: false,
+      error:
+        e?.code === "P2002"
+          ? `A team named "${name}" already exists.`
+          : `Could not create team: ${e?.message ?? "unknown error"}`,
+    };
   }
+
   revalidatePath("/admin/teams");
   revalidatePath("/teams");
   revalidatePath("/");
+  return { ok: true };
 }
 
 async function deleteTeam(formData: FormData) {
@@ -140,24 +141,7 @@ export default async function AdminTeamsPage() {
 
       {flash && <FlashBanner flash={flash} />}
 
-      <form action={createTeam} className="card space-y-4 p-5">
-        <h2 className="text-base font-semibold text-slate-900">Add a new team</h2>
-        <div className="grid gap-3 sm:grid-cols-3">
-          <div>
-            <label className="label">Team name</label>
-            <input className="input" name="name" placeholder="Hitachi Tigers" required />
-          </div>
-          <div>
-            <label className="label">Short code</label>
-            <input className="input" name="shortName" placeholder="TIG" maxLength={5} />
-          </div>
-          <div>
-            <label className="label">Logo URL (optional)</label>
-            <input className="input" name="logoUrl" placeholder="https://..." />
-          </div>
-        </div>
-        <button type="submit" className="btn-primary">Create team</button>
-      </form>
+      <AddTeamForm action={createTeam} />
 
       <div className="card overflow-hidden">
         <div className="overflow-x-auto">

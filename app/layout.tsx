@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import { isAuthenticated } from "@/lib/auth";
 import { getCurrentPlayer } from "@/lib/playerSession";
 import { SiteHeader } from "@/components/SiteHeader";
 
@@ -17,7 +16,6 @@ export default async function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const loggedIn = isAuthenticated();
   const me = await getCurrentPlayer();
   const currentPlayer = me
     ? {
@@ -32,7 +30,7 @@ export default async function RootLayout({
   return (
     <html lang="en">
       <body>
-        <SiteHeader loggedIn={loggedIn} currentPlayer={currentPlayer} />
+        <SiteHeader currentPlayer={currentPlayer} />
 
         <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
           {children}

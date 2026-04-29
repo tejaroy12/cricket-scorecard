@@ -11,6 +11,13 @@ type CurrentPlayer = {
   profileUrl: string;
 } | null;
 
+function validatePhone(raw: string): string | null {
+  const digits = raw.replace(/\D/g, "");
+  if (digits.length === 0) return "Phone number is required.";
+  if (digits.length < 10) return "Phone number must be at least 10 digits.";
+  return null;
+}
+
 export function ProfileDialog({
   initial,
   open,
@@ -21,13 +28,13 @@ export function ProfileDialog({
   onClose: () => void;
 }) {
   const [me, setMe] = useState<CurrentPlayer>(initial);
-  const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
+  const [phoneError, setPhoneError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [shareMsg, setShareMsg] = useState<string | null>(null);
   const router = useRouter();
-  const nameRef = useRef<HTMLInputElement | null>(null);
+  const phoneRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     setMe(initial);
@@ -37,7 +44,8 @@ export function ProfileDialog({
     if (!open) return;
     setError(null);
     setShareMsg(null);
-    setTimeout(() => nameRef.current?.focus(), 30);
+    setPhoneError(null);
+    setTimeout(() => phoneRef.current?.focus(), 30);
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape" && !busy) onClose();
     }
@@ -47,13 +55,17 @@ export function ProfileDialog({
 
   async function lookup(e: React.FormEvent) {
     e.preventDefault();
+    const phoneErr = validatePhone(phone);
+    setPhoneError(phoneErr);
+    if (phoneErr) return;
+
     setBusy(true);
     setError(null);
     try {
       const r = await fetch("/api/players/lookup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, phone }),
+        body: JSON.stringify({ phone }),
       });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.error || "Could not find your profile.");
@@ -63,6 +75,7 @@ export function ProfileDialog({
         team: j.team,
         profileUrl: j.profileUrl,
       });
+      setPhone("");
       router.refresh();
     } catch (err: any) {
       setError(err.message || "Lookup failed.");
@@ -76,8 +89,8 @@ export function ProfileDialog({
     try {
       await fetch("/api/players/session/logout", { method: "POST" });
       setMe(null);
-      setName("");
       setPhone("");
+      setPhoneError(null);
       router.refresh();
     } finally {
       setBusy(false);
@@ -141,7 +154,7 @@ export function ProfileDialog({
             <p className="mt-1 text-sm text-slate-500">
               {me
                 ? "Jump to your profile, share it, or switch to a different one."
-                : "Enter your name and phone number — we'll match it to your player profile automatically."}
+                : "Enter your phone number — we'll match it to your player profile automatically."}
             </p>
           </div>
           <button
@@ -205,28 +218,29 @@ export function ProfileDialog({
         ) : (
           <form onSubmit={lookup} className="mt-4 space-y-3">
             <div>
-              <label className="label">Full name</label>
-              <input
-                ref={nameRef}
-                className="input"
-                placeholder="e.g. Virat Kumar"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                required
-              />
-            </div>
-            <div>
               <label className="label">Phone number</label>
               <input
-                className="input"
+                ref={phoneRef}
+                className={
+                  "input" + (phoneError ? " ring-2 ring-red-300" : "")
+                }
                 type="tel"
                 inputMode="numeric"
                 pattern="[0-9 +()-]*"
                 placeholder="9876543210"
                 value={phone}
-                onChange={(e) => setPhone(e.target.value)}
+                onChange={(e) => {
+                  setPhone(e.target.value);
+                  if (phoneError) setPhoneError(null);
+                }}
+                onBlur={() => setPhoneError(validatePhone(phone))}
                 required
               />
+              {phoneError && (
+                <div className="mt-1 text-xs font-medium text-red-600">
+                  {phoneError}
+                </div>
+              )}
             </div>
             {error && (
               <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 ring-1 ring-red-100">
@@ -247,7 +261,7 @@ export function ProfileDialog({
             )}
             <button
               type="submit"
-              disabled={busy || !name || !phone}
+              disabled={busy || !phone || !!phoneError}
               className="w-full rounded-md bg-hitachi px-3 py-2 text-sm font-semibold text-white hover:bg-hitachi-dark disabled:opacity-50"
             >
               {busy ? "Looking up…" : "Continue to my profile"}

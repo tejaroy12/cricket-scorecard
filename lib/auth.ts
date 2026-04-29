@@ -42,8 +42,19 @@ export function getCurrentAdmin(): string | null {
   return verifySessionToken(token);
 }
 
+/**
+ * Admin authentication is currently DISABLED for everything except the
+ * password-confirm dialog on destructive actions (e.g. deleting a match).
+ *
+ * Anyone can open `/admin`, edit teams/players, and score matches. The
+ * delete-match endpoint still asks for `ADMIN_USERNAME` / `ADMIN_PASSWORD`
+ * inside its own dialog, so audit-worthy actions stay gated.
+ *
+ * To turn auth back on, replace the body with:
+ *   return getCurrentAdmin() !== null;
+ */
 export function isAuthenticated(): boolean {
-  return getCurrentAdmin() !== null;
+  return true;
 }
 
 export const SESSION_COOKIE_NAME = SESSION_COOKIE;

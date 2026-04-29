@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { isScorer } from "@/lib/auth";
+import { isScorer, SESSION_COOKIE_NAME } from "@/lib/auth";
 
 export async function POST(
   _req: Request,
@@ -98,5 +98,16 @@ export async function POST(
     });
   });
 
-  return NextResponse.json({ ok: true, resultText });
+  // Once the match is over, sign the scorer out so the next match
+  // start (or any subsequent scoring action) goes through the
+  // credential popup again.
+  const res = NextResponse.json({ ok: true, resultText });
+  res.cookies.set(SESSION_COOKIE_NAME, "", {
+    path: "/",
+    maxAge: 0,
+    sameSite: "lax",
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+  });
+  return res;
 }

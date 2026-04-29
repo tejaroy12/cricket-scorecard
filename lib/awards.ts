@@ -45,6 +45,25 @@ export async function computeMatchAwards(matchId: string): Promise<MatchAwards> 
     }),
   ]);
 
+  // Decide who won so we can bias Man-of-the-Match towards the
+  // winning side. Falls back to "any side" when the match is still
+  // live, ended in a tie, or pre-dates the winnerTeamId field.
+  const winnerTeamId: string | null =
+    (match as any)?.winnerTeamId ?? null;
+  const winnerSide: 1 | 2 | null = match
+    ? winnerTeamId === match.team1.id
+      ? 1
+      : winnerTeamId === match.team2.id
+      ? 2
+      : null
+    : null;
+  const winnerPlayerIds = new Set<string>();
+  if (match && winnerSide) {
+    for (const mp of match.matchPlayers) {
+      if (mp.side === winnerSide) winnerPlayerIds.add(mp.playerId);
+    }
+  }
+
   // Map: playerId -> team name they played for in THIS match (per-match roster
   // takes precedence over Player.team for display).
   const matchTeamByPlayer = new Map<string, string>();
@@ -164,17 +183,35 @@ export async function computeMatchAwards(matchId: string): Promise<MatchAwards> 
     agg.set(b.playerId, cur);
   }
 
-  let momPlayer: Agg | null = null;
-  let momScore = -Infinity;
+  // Score every player. We split the candidate pool: when a winner
+  // exists, we restrict MOM to the winning side and only fall back to
+  // the global best if nobody on the winning side recorded any
+  // measurable contribution (extreme edge case).
+  type Scored = Agg & { score: number };
+  const scored: Scored[] = [];
   for (const p of agg.values()) {
     const overs = p.legalBalls / 6;
     const economyPenalty =
       overs > 0 ? Math.max(0, p.runsConceded - 6 * overs) * 0.3 : 0;
     const score = p.runs + 20 * p.wickets - economyPenalty;
-    if (score > momScore) {
-      momScore = score;
-      momPlayer = p;
+    scored.push({ ...p, score });
+  }
+  scored.sort((a, b) => b.score - a.score);
+
+  let momPlayer: Agg | null = null;
+  let momScore = -Infinity;
+  if (winnerPlayerIds.size > 0) {
+    const fromWinner = scored.find(
+      (p) => winnerPlayerIds.has(p.playerId) && p.score > 0,
+    );
+    if (fromWinner) {
+      momPlayer = fromWinner;
+      momScore = fromWinner.score;
     }
+  }
+  if (!momPlayer && scored.length > 0 && scored[0].score > -Infinity) {
+    momPlayer = scored[0];
+    momScore = scored[0].score;
   }
 
   let manOfTheMatch: (Award & { score: number }) | null = null;

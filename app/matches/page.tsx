@@ -21,7 +21,12 @@ export default async function MatchesPage() {
 
   return (
     <div className="space-y-10">
-      {live.length > 0 && <AutoRefresher intervalMs={4000} />}
+      {/*
+       * 4s while at least one match is LIVE so the score keeps ticking;
+       * 30s otherwise so newly-started matches and freshly-completed
+       * results show up without needing a manual reload.
+       */}
+      <AutoRefresher intervalMs={live.length > 0 ? 4000 : 30 * 1000} />
 
       <div>
         <h1 className="text-3xl font-bold text-slate-900">All matches</h1>

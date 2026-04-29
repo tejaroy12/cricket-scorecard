@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { isAuthenticated } from "@/lib/auth";
+import { isScorer } from "@/lib/auth";
 
 /**
  * Change the current bowler (typically at the start of a new over).
@@ -17,7 +17,7 @@ export async function POST(
   req: NextRequest,
   { params }: { params: { id: string } },
 ) {
-  if (!isAuthenticated()) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!isScorer()) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const body = await req.json().catch(() => null);
   const bowlerId = body?.bowlerId;
   if (!bowlerId) return NextResponse.json({ error: "bowlerId required" }, { status: 400 });

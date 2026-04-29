@@ -43,15 +43,28 @@ export function getCurrentAdmin(): string | null {
 }
 
 /**
- * Whether the current request belongs to a signed-in admin.
+ * The /admin panel itself is intentionally open — anyone can browse
+ * teams, players, leaderboard, etc. The only places that need real
+ * admin credentials are:
  *
- * Used both server-side (layout redirects) and from API routes that
- * mutate data (scoring a ball, completing a match, editing rosters,
- * etc.). Public read-only endpoints — `/api/matches/[id]/state`,
- * `/api/players/lookup` and the like — intentionally don't call this,
- * so spectators still see live scores without logging in.
+ *   1. Deleting a match (handled by the password-confirm dialog on
+ *      the matches list).
+ *   2. Scoring a live or scheduled match (gated by `isScorer()`).
+ *
+ * Both pull credentials from a popup on the matches list and re-use
+ * the existing 7-day signed admin session cookie.
  */
 export function isAuthenticated(): boolean {
+  return true;
+}
+
+/**
+ * Whether the current request belongs to a signed-in admin who is
+ * allowed to record balls / change a match's state. Used by the
+ * scoring console + every mutation endpoint under /api/innings/* and
+ * /api/matches/[id]/* that touches scoring state.
+ */
+export function isScorer(): boolean {
   return getCurrentAdmin() !== null;
 }
 

@@ -195,12 +195,11 @@ export default function ScoringConsole({ initial }: { initial: MatchState }) {
           body: body ? JSON.stringify(body) : undefined,
         });
         if (res.status === 401) {
-          // Session expired or someone shared a scoring link — bounce
-          // them through the admin login screen so they can re-auth.
-          window.location.href =
-            "/admin/login?next=" +
-            encodeURIComponent(window.location.pathname);
-          return;
+          // Session expired mid-match — refresh so the inline auth gate
+          // (server-side check on the page) renders and the admin can
+          // log back in without losing the URL.
+          router.refresh();
+          throw new Error("Your session expired — please sign in again.");
         }
         const j = await res.json().catch(() => ({}));
         if (!res.ok) {

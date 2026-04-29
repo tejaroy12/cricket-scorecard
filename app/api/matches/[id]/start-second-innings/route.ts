@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { isAuthenticated } from "@/lib/auth";
+import { isScorer } from "@/lib/auth";
 
 export async function POST(
   _req: Request,
   { params }: { params: { id: string } },
 ) {
-  if (!isAuthenticated()) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!isScorer()) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const match = await prisma.match.findUnique({
     where: { id: params.id },

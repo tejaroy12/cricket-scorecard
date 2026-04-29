@@ -2,6 +2,7 @@ import Link from "next/link";
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import { DeleteMatchButton } from "./DeleteMatchDialog";
+import { ScoreLiveButton } from "./ScoreLiveButton";
 
 export const dynamic = "force-dynamic";
 
@@ -89,9 +90,19 @@ export default async function AdminMatchesPage() {
                   </td>
                   <td className="px-5 py-3 text-right">
                     <div className="inline-flex items-center gap-2 whitespace-nowrap">
-                      <Link href={`/admin/matches/${m.id}`} className="rounded-md bg-slate-900 px-3 py-1 text-xs font-medium text-white hover:bg-slate-800">
-                        {m.status === "LIVE" ? "Score live" : m.status === "SCHEDULED" ? "Manage" : "View"}
-                      </Link>
+                      {m.status === "LIVE" || m.status === "SCHEDULED" ? (
+                        <ScoreLiveButton
+                          matchId={m.id}
+                          status={m.status as "LIVE" | "SCHEDULED"}
+                        />
+                      ) : (
+                        <Link
+                          href={`/matches/${m.id}`}
+                          className="rounded-md px-3 py-1 text-xs font-medium text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50"
+                        >
+                          View
+                        </Link>
+                      )}
                       <DeleteMatchButton
                         matchId={m.id}
                         matchTitle={`${m.team1.name} vs ${m.team2.name}`}

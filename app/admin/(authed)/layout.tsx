@@ -1,5 +1,3 @@
-import { redirect } from "next/navigation";
-import { isAuthenticated } from "@/lib/auth";
 import { AdminShell } from "./AdminShell";
 
 export const dynamic = "force-dynamic";
@@ -9,11 +7,8 @@ export default function AuthedAdminLayout({
 }: {
   children: React.ReactNode;
 }) {
-  // Hard gate the entire admin surface — scoring a live match, editing
-  // teams / players / rosters, deleting matches, etc. Spectators can
-  // still watch the public match pages without logging in.
-  if (!isAuthenticated()) {
-    redirect("/admin/login");
-  }
+  // The admin surface (teams, players, leaderboard, match list) is
+  // intentionally open. The scoring console and the delete-match
+  // endpoint enforce credentials individually via popup dialogs.
   return <AdminShell>{children}</AdminShell>;
 }

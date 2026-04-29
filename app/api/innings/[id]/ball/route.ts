@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { applyBall } from "@/lib/scoring";
-import { isAuthenticated } from "@/lib/auth";
+import { isScorer } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
 export async function POST(
   req: NextRequest,
   { params }: { params: { id: string } },
 ) {
-  if (!isAuthenticated()) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!isScorer()) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const body = await req.json().catch(() => null);
   if (!body) return NextResponse.json({ error: "Invalid body" }, { status: 400 });
 
